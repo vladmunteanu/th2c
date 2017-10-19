@@ -63,14 +63,14 @@ class AsyncHTTP2Client(object):
             self.on_connection_ready, self.on_connection_closed,
             connect_timeout=10
         )
+        self.connection.add_event_handler(
+            h2.events.RemoteSettingsChanged, self.on_settings_changed
+        )
         self.connection.connect()
 
     def on_connection_ready(self):
         """ Callback executed when the connection is ready. """
         log.info("Connection established to {}:{}!".format(self.host, self.port))
-        self.connection.add_event_handler(
-            h2.events.RemoteSettingsChanged, self.on_settings_changed
-        )
         self.process_pending_requests()
 
     def on_connection_closed(self, reason):
@@ -88,14 +88,15 @@ class AsyncHTTP2Client(object):
 
     def on_settings_changed(self, event):
         log.info('settings updated: %r', event.changed_settings)
-        settings = event.changed_settings.get(
+        max_requests = event.changed_settings.get(
             h2.settings.SettingCodes.MAX_CONCURRENT_STREAMS
         )
-        if settings:
+        if max_requests:
             self.max_active_requests = min(
-                settings.new_value, self.max_active_requests
+                max_requests.new_value, self.max_active_requests
             )
-            if settings.new_value > settings.original_value:
+            if max_requests.new_value > max_requests.original_value:
+                # we might be able to process more requests, so let's try
                 self.process_pending_requests()
 
     def fetch(self, request, *args, **kwargs):

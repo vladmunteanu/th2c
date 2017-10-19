@@ -198,33 +198,22 @@ class HTTP2ClientConnection(object):
         # to ACK the new settings
         settings_updated = False
 
-        connection_terminated = False
-
         for event in events:
             log.info(["PROCESSING EVENT", event])
             stream_id = getattr(event, 'stream_id', None)
 
             if isinstance(event, h2.events.RemoteSettingsChanged):
                 settings_updated = True
-            elif isinstance(event, h2.events.ConnectionTerminated):
-                connection_terminated = True
             elif isinstance(event, h2.events.DataReceived):
                 recv_streams[stream_id] = recv_streams.get(stream_id, 0) + event.flow_controlled_length
+
             if stream_id and stream_id in self._ongoing_streams:
                 stream = self._ongoing_streams[stream_id]
                 with stack_context.ExceptionStackContext(stream.handle_exception):
                     stream.handle_event(event)
-            elif not stream_id:
-                log.warning(
-                    ["Received event for connection!", event]
-                )
-            else:
-                log.warning(
-                    ["Received event for unregistered stream", event]
-                )
 
-            if event in self.event_handlers:
-                for ev_handler in self.event_handlers[event]:
+            if type(event) in self.event_handlers:
+                for ev_handler in self.event_handlers[type(event)]:
                     ev_handler(event)
 
         recv_connection = 0
@@ -261,7 +250,11 @@ class HTTP2ClientConnection(object):
             self.stream.write(data_to_send)
 
     def add_event_handler(self, event, handler):
-        self.event_handlers.get(event, set()).add(handler)
+        if event not in self.event_handlers:
+            self.event_handlers[event] = set()
+
+        self.event_handlers[event].add(handler)
 
     def remove_event_handler(self, event, handler):
-        self.event_handlers.get(event, set()).remove(handler)
+        if event in self.event_handlers:
+            self.event_handlers[event].remove(handler)
