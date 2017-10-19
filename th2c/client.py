@@ -67,7 +67,7 @@ class AsyncHTTP2Client(object):
 
     def on_connection_ready(self):
         """ Callback executed when the connection is ready. """
-        log.info("Connection established!")
+        log.info("Connection established to {}:{}!".format(self.host, self.port))
         self.connection.add_event_handler(
             h2.events.RemoteSettingsChanged, self.on_settings_changed
         )
@@ -188,7 +188,15 @@ class AsyncHTTP2Client(object):
         del self.queue_timeouts[key]
 
     def handle_request(self, request, callback_clear_active, callback):
-        """ Create an HTTP2Stream object for the current request. """
+        """
+        Create an HTTP2Stream object for the current request.
+        :param request: client request
+        :type request: HTTPRequest
+        :param callback_clear_active: function, executed when the request
+                                      finishes. Removes the current stream
+                                      from the list of active streams.
+        :param callback: function executed when the request finishes
+        """
         stream = HTTP2ClientStream(
             self.connection, request, callback_clear_active, callback
         )

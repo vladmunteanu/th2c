@@ -129,15 +129,16 @@ class HTTP2ClientStream(object):
         ] + self.request.headers.items()
 
         # send headers
-        log.debug(["Sending headers", http2_headers])
-        self.connection.h2_conn.send_headers(
+        log.info(["Sending headers", http2_headers])
+        self.connection.h2conn.send_headers(
             self.stream_id, http2_headers, end_stream=not self.request.body
         )
 
         # send body, if any
         if self.request.body:
             # TODO add flow control
-            self.connection.h2_conn.send_data(
+            log.info(["Sending body", self.request.body])
+            self.connection.h2conn.send_data(
                 self.stream_id, self.request.body, end_stream=True
             )
 
@@ -166,7 +167,7 @@ class HTTP2ClientStream(object):
         )
 
         # run callbacks
-        self.callback_remove_active()
+        IOLoop.instance().add_callback(self.callback_remove_active)
         IOLoop.current().add_callback(
             functools.partial(self.callback_response, response)
         )

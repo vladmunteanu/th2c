@@ -13,6 +13,7 @@ logging.basicConfig(
     format='[%(asctime)s] {%(pathname)s:%(lineno)d} %(levelname)s - %(message)s'
 )
 
+logging.getLogger('hpack').setLevel(logging.INFO)
 
 @gen.coroutine
 def main():
@@ -24,14 +25,14 @@ def main():
         # url="https://nghttp2.org/",
         url="https://google.com/",
         # url="https://requestb.in/u3mh8ku3",
-        method="get",
+        method="GET",
         validate_cert=False,
         request_timeout=3
     )
 
     try:
         r = yield client.fetch(req)
-        logging.info(["GOT RESPONSE!!!!!!!!", r, r.__dict__])
+        logging.info(["GOT RESPONSE!!!!!!!!", r.code, r.headers, r.body])
     except:
         logging.error("Could not fetch", exc_info=True)
 

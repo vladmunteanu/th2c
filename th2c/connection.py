@@ -120,11 +120,14 @@ class HTTP2ClientConnection(object):
 
         # initialize the connection
         self.h2conn = h2.connection.H2Connection(
-            h2.config.H2Configuration(client_side=True, logger=log)
+            h2.config.H2Configuration(client_side=True)
         )
 
         # initiate the h2 connection
-        self.h2conn.initiate_upgrade_connection()
+        self.h2conn.initiate_connection()
+
+        # disable server push
+        self.h2conn.update_settings({h2.settings.SettingCodes.ENABLE_PUSH: 0})
 
         # set the stream reading callback
         with stack_context.ExceptionStackContext(functools.partial(self.on_error, "during read")):
@@ -135,6 +138,8 @@ class HTTP2ClientConnection(object):
             )
 
         self.flush()
+
+        IOLoop.instance().add_callback(self.on_connection_ready)
 
     def on_close(self, reason):
         log.info(["IOStream closed with reason", reason])
@@ -170,7 +175,7 @@ class HTTP2ClientConnection(object):
         self.on_close(val)
 
     def data_received(self, data):
-        log.info(["Received data on IOStream", data])
+        log.info(["Received data on IOStream", len(data)])
         try:
             events = self.h2conn.receive_data(data)
             log.info(["Events to process", events])
@@ -189,23 +194,30 @@ class HTTP2ClientConnection(object):
         """
         recv_streams = dict()
 
+        # if RemoteSettingsChanged is received, we should flush the connection
+        # to ACK the new settings
+        settings_updated = False
+
+        connection_terminated = False
+
         for event in events:
             log.info(["PROCESSING EVENT", event])
             stream_id = getattr(event, 'stream_id', None)
 
-            if isinstance(event, h2.events.DataReceived):
+            if isinstance(event, h2.events.RemoteSettingsChanged):
+                settings_updated = True
+            elif isinstance(event, h2.events.ConnectionTerminated):
+                connection_terminated = True
+            elif isinstance(event, h2.events.DataReceived):
                 recv_streams[stream_id] = recv_streams.get(stream_id, 0) + event.flow_controlled_length
-
             if stream_id and stream_id in self._ongoing_streams:
                 stream = self._ongoing_streams[stream_id]
                 with stack_context.ExceptionStackContext(stream.handle_exception):
                     stream.handle_event(event)
-
             elif not stream_id:
                 log.warning(
                     ["Received event for connection!", event]
                 )
-
             else:
                 log.warning(
                     ["Received event for unregistered stream", event]
@@ -216,17 +228,22 @@ class HTTP2ClientConnection(object):
                     ev_handler(event)
 
         recv_connection = 0
-        for stream_id, num_bytes in recv_streams:
+        for stream_id, num_bytes in recv_streams.iteritems():
+            if not num_bytes:
+                continue
             recv_connection += num_bytes
 
             try:
+                log.info("Trying to increment flow control window for stream {} with {}".format(stream_id, num_bytes))
                 self.h2conn.increment_flow_control_window(num_bytes, stream_id)
             except h2.exceptions.StreamClosedError:
                 # TODO: maybe cleanup stream?
                 log.warning("Tried to increment flow control window for closed stream")
 
         if recv_connection:
+            log.info("Incrementing window flow control")
             self.h2conn.increment_flow_control_window(recv_connection)
+        if recv_connection or settings_updated:
             self.flush()
 
     def begin_stream(self, stream):
@@ -240,7 +257,7 @@ class HTTP2ClientConnection(object):
     def flush(self):
         data_to_send = self.h2conn.data_to_send()
         if data_to_send:
-            log.info(["Flushing data to IOStream", data_to_send])
+            log.info(["Flushing data to IOStream", len(data_to_send)])
             self.stream.write(data_to_send)
 
     def add_event_handler(self, event, handler):
