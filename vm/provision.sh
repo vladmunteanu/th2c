@@ -3,5 +3,5 @@
 apt-get update
 apt-get install -y python python-dev python-pip
 
-cd /opt/dev/tornado_http2_client
+cd /opt/dev/th2c
 pip install -r requirements.txt
