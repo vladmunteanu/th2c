@@ -87,6 +87,7 @@ class AsyncHTTP2Client(object):
             )
 
     def on_settings_changed(self, event):
+        """ Called to handle a RemoteSettingsChanged event. """
         log.info('settings updated: %r', event.changed_settings)
         max_requests = event.changed_settings.get(
             h2.settings.SettingCodes.MAX_CONCURRENT_STREAMS
@@ -118,10 +119,13 @@ class AsyncHTTP2Client(object):
 
         def handle_response(response):
             """ Will be called by HTTP2Stream on request finished """
-            if response.error:
-                future.set_exception(response.error)
+            if isinstance(response, HTTPResponse):
+                if response.error:
+                    future.set_exception(response.error)
+                else:
+                    future.set_result(response)
             else:
-                future.set_result(response)
+                future.set_exception(response)
 
         # unique request key
         key = object()
@@ -201,7 +205,5 @@ class AsyncHTTP2Client(object):
         stream = HTTP2ClientStream(
             self.connection, request, callback_clear_active, callback
         )
-        try:
+        with stack_context.ExceptionStackContext(stream.handle_exception):
             stream.begin_request()
-        except:
-            log.error("Could not send request", exc_info=True)
