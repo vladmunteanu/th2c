@@ -22,19 +22,26 @@ log = logging.getLogger(__name__)
 
 class HTTP2ClientConnection(object):
 
-    def __init__(self, host, port, tcp_client, on_connection_ready=None, on_connection_closed=None, connect_timeout=None):
+    def __init__(self, host, port, tcp_client, secure,
+                 on_connection_ready=None, on_connection_closed=None,
+                 connect_timeout=None, ssl_options=None,
+                 *args, **kwargs):
         """
 
         :param host:
         :param port:
         :param tcp_client:
         :type tcp_client: tornado.tcpclient.TCPClient
+        :param secure: Boolean flag indicating whether this connection should be secured over TLS or not
+        :type secure: bool
         :param on_connection_ready:
         :param on_connection_closed:
         :param connect_timeout:
+        :param ssl_options: dictionary with ssl options that will be passed
         """
         self.host = host
         self.port = port
+        self.secure = secure
 
         self.tcp_client = tcp_client
         self.on_connection_ready = on_connection_ready
@@ -55,16 +62,22 @@ class HTTP2ClientConnection(object):
         self.event_handlers = dict()
 
         self.ssl_context = None
+        self.ssl_options = ssl_options or dict()
         self.parse_ssl_opts()
 
     def parse_ssl_opts(self):
-        if self.port != 443:
+        if not self.secure:
             return
 
         ssl_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
         ssl_context.options |= (
-            ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_COMPRESSION
+             ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_COMPRESSION
         )
+
+        if not self.ssl_options.get('verify_certificate', True):
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
         ssl_context.set_ciphers("ECDHE+AESGCM")
         ssl_context.set_alpn_protocols(["h2"])
 

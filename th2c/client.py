@@ -24,6 +24,7 @@ logger = tornado_log.gen_log
 log = logging.getLogger(__name__)
 
 INITIAL_WINDOW_SIZE = 65535
+DEFAULT_CONNECTION_TIMEOUT = 10  # seconds
 
 
 class AsyncHTTP2Client(object):
@@ -42,9 +43,12 @@ class AsyncHTTP2Client(object):
 
         return client
 
-    def __init__(self, host, port, dns_blocking=True, max_active_requests=10, *args, **kwargs):
+    def __init__(self, host, port, secure=True, dns_blocking=True,
+                 max_active_requests=10, verify_certificate=True,
+                 *args, **kwargs):
         self.host = host
         self.port = port
+        self.secure = secure
 
         # use BlockingResolver if dns_blocking is True,
         # otherwise don't pass any, uses whichever is already configured.
@@ -59,9 +63,10 @@ class AsyncHTTP2Client(object):
         self.active_requests = dict()
 
         self.connection = HTTP2ClientConnection(
-            self.host, self.port, self.tcp_client,
+            self.host, self.port, self.tcp_client, self.secure,
             self.on_connection_ready, self.on_connection_closed,
-            connect_timeout=10
+            ssl_options={'verify_certificate': verify_certificate},
+            connect_timeout=DEFAULT_CONNECTION_TIMEOUT
         )
         self.connection.add_event_handler(
             h2.events.RemoteSettingsChanged, self.on_settings_changed
@@ -88,7 +93,7 @@ class AsyncHTTP2Client(object):
 
     def on_settings_changed(self, event):
         """ Called to handle a RemoteSettingsChanged event. """
-        log.info('settings updated: %r', event.changed_settings)
+        log.info('Settings updated: %r', event.changed_settings)
         max_requests = event.changed_settings.get(
             h2.settings.SettingCodes.MAX_CONCURRENT_STREAMS
         )

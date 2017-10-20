@@ -1,3 +1,4 @@
+import json
 import logging
 import sys
 
@@ -17,17 +18,22 @@ logging.getLogger('hpack').setLevel(logging.INFO)
 
 @gen.coroutine
 def main():
-    # client = AsyncHTTP2Client(host="nghttp2.org", port=443)
-    client = AsyncHTTP2Client(host="google.com", port=443)
-    # client = AsyncHTTP2Client(host="requestb.in", port=443)
+    # client = AsyncHTTP2Client(host="nghttp2.org", port=443, secure=True)
+    # client = AsyncHTTP2Client(host="google.com", port=443, secure=True)
+    # client = AsyncHTTP2Client(host="requestb.in", port=443, secure=True)
+    client = AsyncHTTP2Client(host="localhost", port=8080, secure=True, verify_certificate=False)
 
     req = HTTPRequest(
         # url="https://nghttp2.org/",
-        url="https://google.com/",
+        # url="https://google.com/",
         # url="https://requestb.in/u3mh8ku3",
-        method="GET",
-        validate_cert=False,
-        request_timeout=3
+        url="https://localhost:8080",
+        method="POST",
+        request_timeout=3,
+        headers={
+            'User-Agent': "th2c"
+        },
+        body=json.dumps({'test': 'a'})
     )
 
     try:
@@ -35,6 +41,20 @@ def main():
         logging.info(["GOT RESPONSE!!!!!!!!", r.code, r.headers, r.body])
     except:
         logging.error("Could not fetch", exc_info=True)
+
+    # req2 = HTTPRequest(
+    #     url="https://nghttp2.org/post",
+    #     method="POST",
+    #     validate_cert=False,
+    #     request_timeout=5,
+    #     body=json.dumps({'test1': 'test2'})
+    # )
+    #
+    # try:
+    #     r2 = yield client.fetch(req2)
+    #     logging.info(["GOT RESPONSE!!!!!!!!", r2.code, r2.headers, r2.body])
+    # except:
+    #     logging.error("Could not fetch", exc_info=True)
 
 
 if __name__ == "__main__":
