@@ -27,7 +27,6 @@ class HTTP2ClientConnection(object):
                  connect_timeout=None, ssl_options=None,
                  *args, **kwargs):
         """
-
         :param host:
         :param port:
         :param tcp_client:
@@ -47,10 +46,18 @@ class HTTP2ClientConnection(object):
         self.on_connection_ready = on_connection_ready
         self.on_connection_closed = on_connection_closed
 
+        # private value, exposed through is_connected property
         self._is_connected = False
+
+        # private value, set when the settings have been negotiated
+        self._is_ready = False
+
+        # Checked when the socket connection is made,
+        # to make sure we didn't connect too late.
         self.timed_out = False
 
-        self.stream = None
+        # Underlying Tornado IOStream (or SSLIOStream) object
+        self.io_stream = None
 
         self.connect_timeout = connect_timeout
         self._connect_timeout_t = None
@@ -58,14 +65,18 @@ class HTTP2ClientConnection(object):
         self.h2conn = None
 
         self._ongoing_streams = dict()
-
         self.event_handlers = dict()
 
         self.ssl_context = None
         self.ssl_options = ssl_options or dict()
+
+        # parse ssl options and create the appropriate SSLContext, if necessary
         self.parse_ssl_opts()
 
     def parse_ssl_opts(self):
+        """
+        Parses self.ssl_options and creates a SSLContext if self.secure is True.
+        """
         if not self.secure:
             return
 
@@ -91,14 +102,16 @@ class HTTP2ClientConnection(object):
             return
 
         self.timed_out = False
-        start_time = IOLoop.current().time()
+        self._is_connected = False
+        self._is_ready = False
 
         # set the connection timeout
+        start_time = IOLoop.current().time()
         self._connect_timeout_t = IOLoop.current().add_timeout(
             start_time + self.connect_timeout, self.on_timeout
         )
 
-        #  connect the tcp client, passing self.on_connect as callback
+        # connect the tcp client, passing self.on_connect as callback
         with stack_context.ExceptionStackContext(functools.partial(self.on_error, "during connection")):
             self.tcp_client.connect(
                 self.host, self.port, af=socket.AF_UNSPEC,
@@ -106,14 +119,46 @@ class HTTP2ClientConnection(object):
                 callback=self.on_connect
             )
 
+    def close(self):
+        """ TODO: close the connection, sending the GOAWAY frame. """
+        self._is_ready = False
+        self._is_connected = False
+
+        if self._connect_timeout_t:
+            IOLoop.instance().remove_timeout(self._connect_timeout_t)
+            self._connect_timeout_t = None
+
+        self.h2conn.close_connection()
+
+        try:
+            self.flush()
+        except:
+            log.error(
+                "Could not send GOAWAY frame, connection terminated!",
+                exc_info=True
+            )
+        finally:
+            self.h2conn = None
+
+        try:
+            self.io_stream.close()
+        except:
+            log.error("Could not close IOStream!", exc_info=True)
+
+        # TODO: close all ongoing streams?
+
     @property
     def is_connected(self):
         return self._is_connected
 
+    @property
+    def is_ready(self):
+        return self._is_ready
+
     def on_connect(self, io_stream):
         log.info(["IOStream opened", io_stream])
         if self.timed_out:
-            log.info("IOStream should close, we timed out")
+            log.info("Connection timeout!")
             io_stream.close()
             return
 
@@ -123,11 +168,11 @@ class HTTP2ClientConnection(object):
         IOLoop.current().remove_timeout(self._connect_timeout_t)
         self._connect_timeout_t = None
 
-        self.stream = io_stream
-        self.stream.set_nodelay(True)
+        self.io_stream = io_stream
+        self.io_stream.set_nodelay(True)
 
         # set the close callback
-        self.stream.set_close_callback(
+        self.io_stream.set_close_callback(
             functools.partial(self.on_close, io_stream.error)
         )
 
@@ -144,7 +189,7 @@ class HTTP2ClientConnection(object):
 
         # set the stream reading callback
         with stack_context.ExceptionStackContext(functools.partial(self.on_error, "during read")):
-            self.stream.read_bytes(
+            self.io_stream.read_bytes(
                 num_bytes=65535,
                 streaming_callback=self.data_received,
                 callback=self.data_received
@@ -155,23 +200,31 @@ class HTTP2ClientConnection(object):
         IOLoop.instance().add_callback(self.on_connection_ready)
 
     def on_close(self, reason):
+        """
+        TODO: clean up on_close logic,
+        this seems to be called from many places,
+        maybe we need to call close() instead.
+        """
         log.info(["IOStream closed with reason", reason])
         # cleanup
         self._is_connected = False
         self.h2conn = None
 
-        if self.stream:
+        if self.io_stream:
             try:
-                self.stream.close()
+                self.io_stream.close()
             except:
                 log.error("Error trying to close stream", exc_info=True)
             finally:
-                self.stream = None
+                self.io_stream = None
 
         # callback connection closed
         self.on_connection_closed(reason)
 
     def on_timeout(self):
+        """
+        Connection timed out.
+        """
         log.info(
             "HTTP2ClientConnection timed out after {}".format(
                 self.connect_timeout
@@ -182,6 +235,13 @@ class HTTP2ClientConnection(object):
         self.on_close(HTTPError(599))
 
     def on_error(self, phase, typ, val, tb):
+        """
+        Connection error.
+        :param phase: phase we encountered the error in
+        :param typ: type of error
+        :param val: error
+        :param tb: traceback information
+        """
         log.error(
             ["HTTP2ClientConnection error ", phase, typ, val, traceback.format_tb(tb)]
         )
@@ -207,17 +267,11 @@ class HTTP2ClientConnection(object):
         """
         recv_streams = dict()
 
-        # if RemoteSettingsChanged is received, we should flush the connection
-        # to ACK the new settings
-        settings_updated = False
-
         for event in events:
             log.info(["PROCESSING EVENT", event])
             stream_id = getattr(event, 'stream_id', None)
 
-            if isinstance(event, h2.events.RemoteSettingsChanged):
-                settings_updated = True
-            elif isinstance(event, h2.events.DataReceived):
+            if isinstance(event, h2.events.DataReceived):
                 recv_streams[stream_id] = recv_streams.get(stream_id, 0) + event.flow_controlled_length
 
             if stream_id and stream_id in self._ongoing_streams:
@@ -236,17 +290,23 @@ class HTTP2ClientConnection(object):
             recv_connection += num_bytes
 
             try:
-                log.info("Trying to increment flow control window for stream {} with {}".format(stream_id, num_bytes))
+                log.info(
+                    "Incrementing flow control window for stream %d with %d",
+                    stream_id, num_bytes
+                )
                 self.h2conn.increment_flow_control_window(num_bytes, stream_id)
             except h2.exceptions.StreamClosedError:
                 # TODO: maybe cleanup stream?
-                log.warning("Tried to increment flow control window for closed stream")
+                log.warning("Failed to increment flow control window for closed stream")
 
         if recv_connection:
-            log.info("Incrementing window flow control")
+            log.info(
+                "Incrementing window flow control with %d", recv_connection
+            )
             self.h2conn.increment_flow_control_window(recv_connection)
-        if recv_connection or settings_updated:
-            self.flush()
+
+        # flush data that has been generated after processing these events
+        self.flush()
 
     def begin_stream(self, stream):
         stream_id = self.h2conn.get_next_available_stream_id()
@@ -259,8 +319,8 @@ class HTTP2ClientConnection(object):
     def flush(self):
         data_to_send = self.h2conn.data_to_send()
         if data_to_send:
-            log.info(["Flushing data to IOStream", len(data_to_send)])
-            self.stream.write(data_to_send)
+            log.info("Flushing %d bytes to IOStream", len(data_to_send))
+            self.io_stream.write(data_to_send)
 
     def add_event_handler(self, event, handler):
         if event not in self.event_handlers:

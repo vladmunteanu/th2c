@@ -91,9 +91,13 @@ class AsyncHTTP2Client(object):
                 )
             )
 
+        # TODO: Reconnect after a customizable refresh_interval value
+
     def on_settings_changed(self, event):
         """ Called to handle a RemoteSettingsChanged event. """
         log.info('Settings updated: %r', event.changed_settings)
+
+        # read maximum concurrent streams (requests) (MAX_CONCURRENT_STREAMS)
         max_requests = event.changed_settings.get(
             h2.settings.SettingCodes.MAX_CONCURRENT_STREAMS
         )
@@ -104,6 +108,12 @@ class AsyncHTTP2Client(object):
             if max_requests.new_value > max_requests.original_value:
                 # we might be able to process more requests, so let's try
                 self.process_pending_requests()
+
+        # TODO: read initial window size (INITIAL_WINDOW_SIZE)
+
+        # TODO: read maximum frame size (MAX_FRAME_SIZE)
+
+        # TODO (later): MAX_HEADER_LIST_SIZE, HEADER_TABLE_SIZE
 
     def fetch(self, request, *args, **kwargs):
         """

@@ -90,6 +90,9 @@ class HTTP2ClientStream(object):
             self._chunks.append(event.data)
         elif isinstance(event, h2.events.StreamEnded):
             self.finish()
+        elif isinstance(event, h2.events.StreamReset):
+            # TODO: close stream
+            self.finish()
 
     def begin_request(self):
         parsed = urlsplit(to_unicode(self.request.url))
@@ -167,7 +170,5 @@ class HTTP2ClientStream(object):
         )
 
         # run callbacks
-        IOLoop.instance().add_callback(self.callback_remove_active)
-        IOLoop.current().add_callback(
-            functools.partial(self.callback_response, response)
-        )
+        self.callback_remove_active()
+        self.callback_response(response)
