@@ -197,7 +197,7 @@ class HTTP2ClientConnection(object):
 
         self.flush()
 
-        IOLoop.instance().add_callback(self.on_connection_ready)
+        self.on_connection_ready()
 
     def on_close(self, reason):
         """

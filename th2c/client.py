@@ -204,7 +204,7 @@ class AsyncHTTP2Client(object):
             request, 599, error=HTTPError(599, "Timeout in processing queue"),
             request_time=IOLoop.current().time() - request.start_time
         )
-        IOLoop.current().add_callback(callback, timeout_response)
+        callback(timeout_response)
         del self.queue_timeouts[key]
 
     def handle_request(self, request, callback_clear_active, callback):
