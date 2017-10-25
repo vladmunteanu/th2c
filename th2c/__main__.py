@@ -16,45 +16,63 @@ logging.basicConfig(
 
 logging.getLogger('hpack').setLevel(logging.INFO)
 
+
 @gen.coroutine
 def main():
     # client = AsyncHTTP2Client(host="nghttp2.org", port=443, secure=True)
     # client = AsyncHTTP2Client(host="google.com", port=443, secure=True)
     # client = AsyncHTTP2Client(host="requestb.in", port=443, secure=True)
-    client = AsyncHTTP2Client(host="localhost", port=8080, secure=True, verify_certificate=False)
-
-    req = HTTPRequest(
-        # url="https://nghttp2.org/",
-        # url="https://google.com/",
-        # url="https://requestb.in/u3mh8ku3",
-        url="https://localhost:8080",
-        method="POST",
-        request_timeout=3,
-        headers={
-            'User-Agent': "th2c"
-        },
-        body=json.dumps({'test': 'a'})
+    client = AsyncHTTP2Client(
+        host="localhost", port=8080, secure=True, verify_certificate=False
     )
 
-    try:
-        r = yield client.fetch(req)
-        logging.info(["GOT RESPONSE!!!!!!!!", r.code, r.headers, r.body])
-    except:
-        logging.error("Could not fetch", exc_info=True)
+    # client = AsyncHTTP2Client(
+    #     host="google.ro", port=443, secure=True, verify_certificate=False
+    # )
 
-    # req2 = HTTPRequest(
-    #     url="https://nghttp2.org/post",
+    # req = HTTPRequest(
+    #     # url="https://nghttp2.org/",
+    #     # url="https://google.ro/",
+    #     # url="https://requestb.in/u3mh8ku3",
+    #     url="https://localhost:8080",
     #     method="POST",
-    #     validate_cert=False,
-    #     request_timeout=5,
-    #     body=json.dumps({'test1': 'test2'})
+    #     # method="GET",
+    #     request_timeout=3,
+    #     headers={
+    #         'User-Agent': "th2c"
+    #     },
+    #     body=json.dumps({'test': 'a'})
     # )
     #
     # try:
-    #     r2 = yield client.fetch(req2)
-    #     logging.info(["GOT RESPONSE!!!!!!!!", r2.code, r2.headers, r2.body])
+    #     r = yield client.fetch(req)
+    #     logging.info(["GOT RESPONSE!!!!!!!!", r.code, r.headers, r.body])
     # except:
     #     logging.error("Could not fetch", exc_info=True)
+
+    requests = []
+    for i in range(0, 10):
+        req = HTTPRequest(
+            url="https://localhost:8080",
+            method="POST",
+            request_timeout=3,  # seconds
+            headers={
+                'User-Agent': "th2c"
+            },
+            body=json.dumps({'test': 'a', 'number': i})
+        )
+
+        f = client.fetch(req)
+        requests.append(f)
+
+    yield requests
+
+    for f in requests:
+        try:
+            r = yield f
+            logging.info(["GOT RESPONSE!!!!!!!!", r.code, r.headers, r.body])
+        except Exception as e:
+            logging.error("Could not fetch because %s", e)
 
 
 if __name__ == "__main__":

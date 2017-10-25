@@ -10,7 +10,7 @@ import h2.events
 import h2.exceptions
 import h2.settings
 
-from tornado import log as tornado_log, stack_context, httputil
+from tornado import stack_context, httputil
 from tornado.concurrent import TracebackFuture
 from tornado.httpclient import HTTPRequest, HTTPResponse, _RequestProxy, HTTPError
 from tornado.ioloop import IOLoop
@@ -20,7 +20,6 @@ from tornado.tcpclient import TCPClient
 from .connection import HTTP2ClientConnection
 from .stream import HTTP2ClientStream
 
-logger = tornado_log.gen_log
 log = logging.getLogger(__name__)
 
 INITIAL_WINDOW_SIZE = 65535
@@ -58,6 +57,7 @@ class AsyncHTTP2Client(object):
             self.tcp_client = TCPClient()
 
         self.max_active_requests = max_active_requests
+
         self.pending_requests = collections.deque()
         self.queue_timeouts = dict()
         self.active_requests = dict()
@@ -65,8 +65,11 @@ class AsyncHTTP2Client(object):
         self.connection = HTTP2ClientConnection(
             self.host, self.port, self.tcp_client, self.secure,
             self.on_connection_ready, self.on_connection_closed,
-            ssl_options={'verify_certificate': verify_certificate},
-            connect_timeout=DEFAULT_CONNECTION_TIMEOUT
+            ssl_options={
+                'verify_certificate': verify_certificate
+            },
+            connect_timeout=DEFAULT_CONNECTION_TIMEOUT,
+            max_concurrent_streams=self.max_active_requests
         )
         self.connection.add_event_handler(
             h2.events.RemoteSettingsChanged, self.on_settings_changed
@@ -170,7 +173,7 @@ class AsyncHTTP2Client(object):
         return future
 
     def process_pending_requests(self):
-        if not self.connection.is_connected:
+        if not self.connection.is_ready:
             return
 
         with stack_context.NullContext():
@@ -217,6 +220,9 @@ class AsyncHTTP2Client(object):
                                       from the list of active streams.
         :param callback: function executed when the request finishes
         """
+        if not self.connection.is_ready:
+            log.error("Trying to send a request while connection is not ready!")
+
         stream = HTTP2ClientStream(
             self.connection, request, callback_clear_active, callback
         )

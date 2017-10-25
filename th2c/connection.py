@@ -11,11 +11,11 @@ import h2.events
 import h2.exceptions
 import h2.settings
 from tornado import stack_context
-from tornado import log as tornado_log
 from tornado.httpclient import HTTPError
 from tornado.ioloop import IOLoop
 
-logger = tornado_log.gen_log
+from .flowcontrol import FlowControlWindow
+from .config import DEFAULT_WINDOW_SIZE
 
 log = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ class HTTP2ClientConnection(object):
     def __init__(self, host, port, tcp_client, secure,
                  on_connection_ready=None, on_connection_closed=None,
                  connect_timeout=None, ssl_options=None,
+                 max_concurrent_streams=None,
                  *args, **kwargs):
         """
         :param host:
@@ -46,11 +47,15 @@ class HTTP2ClientConnection(object):
         self.on_connection_ready = on_connection_ready
         self.on_connection_closed = on_connection_closed
 
-        # private value, exposed through is_connected property
+        # private value, set when the socket opens
         self._is_connected = False
 
-        # private value, set when the settings have been negotiated
+        # private value, set when the connection is ready to send streams on
         self._is_ready = False
+
+        # private value, set when settings have been negotiated after
+        # the connection is established
+        self._negotiated_settings = False
 
         # Checked when the socket connection is made,
         # to make sure we didn't connect too late.
@@ -72,6 +77,11 @@ class HTTP2ClientConnection(object):
 
         # parse ssl options and create the appropriate SSLContext, if necessary
         self.parse_ssl_opts()
+
+        self.max_concurrent_streams = max_concurrent_streams
+
+        self.initial_window_size = DEFAULT_WINDOW_SIZE
+        self.flow_control_window = None
 
     def parse_ssl_opts(self):
         """
@@ -139,6 +149,7 @@ class HTTP2ClientConnection(object):
             )
         finally:
             self.h2conn = None
+            self.flow_control_window = None
 
         try:
             self.io_stream.close()
@@ -185,7 +196,13 @@ class HTTP2ClientConnection(object):
         self.h2conn.initiate_connection()
 
         # disable server push
-        self.h2conn.update_settings({h2.settings.SettingCodes.ENABLE_PUSH: 0})
+        self.h2conn.update_settings({
+            h2.settings.SettingCodes.ENABLE_PUSH: 0,
+            h2.settings.SettingCodes.MAX_CONCURRENT_STREAMS:
+                self.max_concurrent_streams,
+            h2.settings.SettingCodes.INITIAL_WINDOW_SIZE:
+                self.initial_window_size
+        })
 
         # set the stream reading callback
         with stack_context.ExceptionStackContext(functools.partial(self.on_error, "during read")):
@@ -197,7 +214,7 @@ class HTTP2ClientConnection(object):
 
         self.flush()
 
-        self.on_connection_ready()
+        # self.on_connection_ready()
 
     def on_close(self, reason):
         """
@@ -273,6 +290,11 @@ class HTTP2ClientConnection(object):
 
             if isinstance(event, h2.events.DataReceived):
                 recv_streams[stream_id] = recv_streams.get(stream_id, 0) + event.flow_controlled_length
+            elif isinstance(event, h2.events.RemoteSettingsChanged):
+                self.process_settings(event)
+            elif isinstance(event, h2.events.WindowUpdated):
+                if not stream_id == 0:
+                    self.flow_control_window.produce(event.delta)
 
             if stream_id and stream_id in self._ongoing_streams:
                 stream = self._ongoing_streams[stream_id]
@@ -307,6 +329,33 @@ class HTTP2ClientConnection(object):
 
         # flush data that has been generated after processing these events
         self.flush()
+
+    def process_settings(self, event):
+        """
+        Called to process a RemoteSettingsChanged event.
+        :param event: a RemoteSettingsChanged event
+        :type event: h2.events.RemoteSettingsChanged
+        """
+
+        initial_window_size = event.changed_settings.get(
+            h2.settings.SettingCodes.INITIAL_WINDOW_SIZE
+        )
+        if initial_window_size:
+            self.initial_window_size = initial_window_size
+
+        for name, value in event.changed_settings.iteritems():
+            log.info("Received setting %s : %s", name, value)
+
+        if not self._negotiated_settings:
+            self._negotiated_settings = True
+            self._is_ready = True
+
+            if not self.flow_control_window:
+                self.flow_control_window = FlowControlWindow(
+                    initial_value=self.initial_window_size
+                )
+
+            self.on_connection_ready()
 
     def begin_stream(self, stream):
         stream_id = self.h2conn.get_next_available_stream_id()
