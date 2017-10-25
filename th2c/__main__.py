@@ -5,6 +5,7 @@ import logging
 from tornado import gen
 from tornado.ioloop import IOLoop
 from tornado.httpclient import HTTPRequest, HTTPError
+from tornado.simple_httpclient import SimpleAsyncHTTPClient
 
 from .client import AsyncHTTP2Client
 
@@ -50,6 +51,8 @@ def main():
     # except:
     #     logging.error("Could not fetch", exc_info=True)
 
+    import time
+    st = time.time()
     requests = []
     for i in range(0, 100):
         req = HTTPRequest(
@@ -74,8 +77,41 @@ def main():
         except Exception as e:
             pass
 
-    logging.info("FINISHED %d requests", j)
-    print("FINISHED %d requests" % j)
+    logging.info("FINISHED %d HTTP/2 requests in %f seconds", j, time.time() - st)
+    print("FINISHED %d HTTP/2 requests %f" % (j, time.time() - st))
+
+    ################################
+
+    http1client = SimpleAsyncHTTPClient(max_clients=10)
+
+    st = time.time()
+    requests = []
+    for i in range(0, 100):
+        req = HTTPRequest(
+            url="https://localhost:8080",
+            method="POST",
+            request_timeout=15,  # seconds
+            headers={
+                'User-Agent': "th2c"
+            },
+            body=json.dumps({'test': 'a', 'number': i}),
+            validate_cert=False
+        )
+
+        f = http1client.fetch(req)
+        requests.append(f)
+
+    j = 0
+    for f in requests:
+        try:
+            r = yield f
+            j += 1
+            logging.info(["GOT RESPONSE!!!!!!!!", r.code, r.headers, r.body])
+        except Exception as e:
+            pass
+
+    logging.info("FINISHED %d HTTP/1.1 requests in %f seconds", j, time.time() - st)
+    print("FINISHED %d HTTP/1.1 requests %f" % (j, time.time() - st))
 
 
 if __name__ == "__main__":
