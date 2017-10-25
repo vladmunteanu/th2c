@@ -196,7 +196,8 @@ class AsyncHTTP2Client(object):
     def remove_active(self, key):
         """ Called when a request is finished """
         del self.active_requests[key]
-        self.process_pending_requests()
+        # self.process_pending_requests()
+        IOLoop.instance().add_callback(self.process_pending_requests)
 
     def on_queue_timeout(self, key):
         """ Called when a request timeout expires while in processing queue. """
