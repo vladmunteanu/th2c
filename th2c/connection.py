@@ -290,11 +290,12 @@ class HTTP2ClientConnection(object):
 
             if isinstance(event, h2.events.DataReceived):
                 recv_streams[stream_id] = recv_streams.get(stream_id, 0) + event.flow_controlled_length
+            elif isinstance(event, h2.events.WindowUpdated):
+                if stream_id == 0:
+                    self.flow_control_window.produce(event.delta)
+                    log.info("INCREMENTED CONNECTION WINDOW BY %d, NOW AT %d", event.delta, self.flow_control_window.value)
             elif isinstance(event, h2.events.RemoteSettingsChanged):
                 self.process_settings(event)
-            elif isinstance(event, h2.events.WindowUpdated):
-                if not stream_id == 0:
-                    self.flow_control_window.produce(event.delta)
 
             if stream_id and stream_id in self._ongoing_streams:
                 stream = self._ongoing_streams[stream_id]
@@ -307,7 +308,7 @@ class HTTP2ClientConnection(object):
 
         recv_connection = 0
         for stream_id, num_bytes in recv_streams.iteritems():
-            if not num_bytes:
+            if not num_bytes or stream_id not in self._ongoing_streams:
                 continue
             recv_connection += num_bytes
 
@@ -320,6 +321,8 @@ class HTTP2ClientConnection(object):
             except h2.exceptions.StreamClosedError:
                 # TODO: maybe cleanup stream?
                 log.warning("Failed to increment flow control window for closed stream")
+            except KeyError:
+                log.error("WEIRD %i is stream id in ongoing_streams? %s", stream_id, stream_id in self._ongoing_streams, exc_info=True)
 
         if recv_connection:
             log.info(

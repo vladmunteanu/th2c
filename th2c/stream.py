@@ -66,10 +66,10 @@ class HTTP2ClientStream(object):
     def on_timeout(self):
         IOLoop.current().remove_timeout(self._timeout)
         self._timeout = None
-        self.handle_exception(HTTPError, HTTPError(599), None)
+        self.handle_exception(HTTPError, HTTPError(599, "Timeout while processing request."), None)
 
     def handle_exception(self, typ, val, tb):
-        log.info(["Error while processing event", typ, val, traceback.format_tb(tb)])
+        log.info(["STREAM %i Error while processing event" % self.stream_id, typ, val, traceback.format_tb(tb)])
         self.finish()
 
     def handle_event(self, event):
@@ -160,15 +160,17 @@ class HTTP2ClientStream(object):
             sent = 0
             log.info("Attempting to send body of %d length", len(self.request.body))
             while sent < to_send:
-                log.info("Waiting for windows to be available!")
-                sw = yield self.flow_control_window.available()
-                log.info("STREAM window has %d available", sw)
-                cw = yield self.connection.flow_control_window.available()
-                log.info("CONNECTION window has %d available", cw)
+                log.info("STREAM %i Waiting for windows to be available!", self.stream_id)
+                yield self.flow_control_window.available()
+                yield self.connection.flow_control_window.available()
 
                 remaining = to_send - sent
+                sw = self.flow_control_window.value
+                log.info("STREAM %i STREAM window has %d available", self.stream_id, sw)
+                cw = self.connection.flow_control_window.value
+                log.info("STREAM %i CONNECTION window has %d available", self.stream_id, cw)
                 to_consume = min(self.max_frame_size, sw, cw, remaining)
-                log.info("Will consume %d", to_consume)
+                log.info("STREAM %i Will consume %d", self.stream_id, to_consume)
                 if to_consume == 0:
                     # if the minimum is 0, we probably got it from connection
                     # window, so let's try again later
@@ -176,11 +178,11 @@ class HTTP2ClientStream(object):
 
                 consumed = self.flow_control_window.consume(to_consume)
                 if consumed < to_consume:
-                    raise Exception("Stream window less than minimum available.")
+                    raise Exception("STREAM %i Stream window less than minimum available." % self.stream_id)
 
                 consumed = self.connection.flow_control_window.consume(to_consume)
                 if consumed < to_consume:
-                    raise Exception("Connection window less than minimum available.")
+                    raise Exception("STREAM %i Connection window less than minimum available." % self.stream_id)
 
                 # we consumed another chunk, let's send it
                 end_stream = False

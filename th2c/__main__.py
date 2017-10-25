@@ -1,6 +1,6 @@
+import datetime
 import json
 import logging
-import sys
 
 from tornado import gen
 from tornado.ioloop import IOLoop
@@ -9,7 +9,7 @@ from tornado.httpclient import HTTPRequest, HTTPError
 from .client import AsyncHTTP2Client
 
 logging.basicConfig(
-    stream=sys.stdout,
+    filename='/opt/dev/th2c/logs/th2c_run_%s.log' % (datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")),
     level=logging.DEBUG,
     format='[%(asctime)s] {%(pathname)s:%(lineno)d} %(levelname)s - %(message)s'
 )
@@ -23,7 +23,7 @@ def main():
     # client = AsyncHTTP2Client(host="google.com", port=443, secure=True)
     # client = AsyncHTTP2Client(host="requestb.in", port=443, secure=True)
     client = AsyncHTTP2Client(
-        host="localhost", port=8080, secure=True, verify_certificate=False
+        host="localhost", port=8080, secure=True, verify_certificate=False, max_active_requests=10
     )
 
     # client = AsyncHTTP2Client(
@@ -51,11 +51,11 @@ def main():
     #     logging.error("Could not fetch", exc_info=True)
 
     requests = []
-    for i in range(0, 10):
+    for i in range(0, 100):
         req = HTTPRequest(
             url="https://localhost:8080",
             method="POST",
-            request_timeout=3,  # seconds
+            request_timeout=15,  # seconds
             headers={
                 'User-Agent': "th2c"
             },
@@ -65,14 +65,17 @@ def main():
         f = client.fetch(req)
         requests.append(f)
 
-    yield requests
-
+    j = 0
     for f in requests:
         try:
             r = yield f
+            j += 1
             logging.info(["GOT RESPONSE!!!!!!!!", r.code, r.headers, r.body])
         except Exception as e:
-            logging.error("Could not fetch because %s", e)
+            pass
+
+    logging.info("FINISHED %d requests", j)
+    print("FINISHED %d requests" % j)
 
 
 if __name__ == "__main__":
