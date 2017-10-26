@@ -191,13 +191,18 @@ class AsyncHTTP2Client(object):
                 self.active_requests[key] = (request, callback)
                 remove_from_active_cb = functools.partial(self.remove_active, key)
 
-                self.handle_request(request, remove_from_active_cb, callback)
+                # self.handle_request(request, remove_from_active_cb, callback)
+                IOLoop.instance().add_callback(
+                    self.handle_request,
+                    request, remove_from_active_cb, callback
+                )
 
     def remove_active(self, key):
         """ Called when a request is finished """
+        log.info("Stream removed from active requests")
         del self.active_requests[key]
-        # self.process_pending_requests()
-        IOLoop.instance().add_callback(self.process_pending_requests)
+        self.process_pending_requests()
+        # IOLoop.instance().add_callback(self.process_pending_requests)
 
     def on_queue_timeout(self, key):
         """ Called when a request timeout expires while in processing queue. """

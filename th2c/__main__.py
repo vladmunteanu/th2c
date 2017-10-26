@@ -24,7 +24,8 @@ def main():
     # client = AsyncHTTP2Client(host="google.com", port=443, secure=True)
     # client = AsyncHTTP2Client(host="requestb.in", port=443, secure=True)
     client = AsyncHTTP2Client(
-        host="localhost", port=8080, secure=True, verify_certificate=False, max_active_requests=10
+        host="localhost", port=8080, secure=True,
+        verify_certificate=False, max_active_requests=10
     )
 
     # client = AsyncHTTP2Client(

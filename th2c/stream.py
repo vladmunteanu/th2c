@@ -147,7 +147,7 @@ class HTTP2ClientStream(object):
         ] + self.request.headers.items()
 
         # send headers
-        log.info(["Sending headers", http2_headers])
+        log.info("STREAM %i Sending headers", self.stream_id)
         self.connection.h2conn.send_headers(
             self.stream_id, http2_headers, end_stream=not self.request.body
         )
@@ -158,7 +158,7 @@ class HTTP2ClientStream(object):
             # TODO add flow control
             to_send = len(self.request.body)
             sent = 0
-            log.info("Attempting to send body of %d length", len(self.request.body))
+            log.info("STREAM %i Attempting to send body of %d length", self.stream_id, len(self.request.body))
             while sent < to_send:
                 log.info("STREAM %i Waiting for windows to be available!", self.stream_id)
                 yield self.flow_control_window.available()
@@ -197,6 +197,7 @@ class HTTP2ClientStream(object):
                 self.connection.flush()
 
     def finish(self):
+        log.info("STREAM %i finished", self.stream_id)
         # mark stream as finished
         self.connection.end_stream(self)
 
