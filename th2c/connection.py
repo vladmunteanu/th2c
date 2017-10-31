@@ -19,6 +19,8 @@ from .config import DEFAULT_WINDOW_SIZE
 
 log = logging.getLogger(__name__)
 
+H2_AlPN_PROTOCOLS = ['h2']
+
 
 class HTTP2ClientConnection(object):
 
@@ -91,16 +93,15 @@ class HTTP2ClientConnection(object):
             return
 
         ssl_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-        ssl_context.options |= (
-             ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_COMPRESSION
-        )
+        ssl_context.options |= ssl.OP_NO_TLSv1
+        ssl_context.options |= ssl.OP_NO_TLSv1_1
 
         if not self.ssl_options.get('verify_certificate', True):
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
 
-        ssl_context.set_ciphers("ECDHE+AESGCM")
-        ssl_context.set_alpn_protocols(["h2"])
+        ssl_context.set_ciphers('ECDHE+AESGCM')
+        ssl_context.set_alpn_protocols(H2_AlPN_PROTOCOLS)
 
         self.ssl_context = ssl_context
 
@@ -138,9 +139,8 @@ class HTTP2ClientConnection(object):
             IOLoop.instance().remove_timeout(self._connect_timeout_t)
             self._connect_timeout_t = None
 
-        self.h2conn.close_connection()
-
         try:
+            self.h2conn.close_connection()
             self.flush()
         except:
             log.error(
@@ -172,6 +172,10 @@ class HTTP2ClientConnection(object):
             log.info("Connection timeout!")
             io_stream.close()
             return
+
+        if self.secure:
+            if io_stream.socket.selected_alpn_protocol() not in H2_AlPN_PROTOCOLS:
+                raise Exception("Failed to negotiate the appropriate protocol")
 
         self._is_connected = True
 
@@ -310,19 +314,14 @@ class HTTP2ClientConnection(object):
         for stream_id, num_bytes in recv_streams.iteritems():
             if not num_bytes or stream_id not in self._ongoing_streams:
                 continue
-            recv_connection += num_bytes
 
-            try:
-                log.info(
-                    "Incrementing flow control window for stream %d with %d",
-                    stream_id, num_bytes
-                )
-                self.h2conn.increment_flow_control_window(num_bytes, stream_id)
-            except h2.exceptions.StreamClosedError:
-                # TODO: maybe cleanup stream?
-                log.warning("Failed to increment flow control window for closed stream")
-            except KeyError:
-                log.error("WEIRD %i is stream id in ongoing_streams? %s", stream_id, stream_id in self._ongoing_streams, exc_info=True)
+            log.info(
+                "Incrementing flow control window for stream %d with %d",
+                stream_id, num_bytes
+            )
+            self.h2conn.increment_flow_control_window(num_bytes, stream_id)
+
+            recv_connection += num_bytes
 
         if recv_connection:
             log.info(
