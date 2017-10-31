@@ -1,6 +1,7 @@
 import os
 import datetime
 import json
+import time
 import logging
 
 from tornado import gen
@@ -70,8 +71,9 @@ def test_apple():
     )
 
     try:
+        st = time.time()
         r = yield async_http_client_ssl.fetch(req)
-        logging.info(["Got response", r, r.body])
+        logging.info(["Got response in", time.time() - st, r, r.body])
     except:
         logging.error("Could not fetch request", exc_info=True)
 
@@ -90,19 +92,49 @@ def test_local():
         headers={
             'User-Agent': "th2c"
         },
-        body=json.dumps({'test': 'a'})
+        body=json.dumps({'test': 'a', 'value': 0})
     )
 
     try:
+        st = time.time()
         r = yield client.fetch(req)
-        logging.info(["GOT RESPONSE!!!!!!!!", r.code, r.headers, r.body])
+        logging.info(["GOT RESPONSE in", time.time() - st, r.code, r.headers, r.body])
     except:
         logging.error("Could not fetch", exc_info=True)
 
 
 @gen.coroutine
+def test_local_many(n):
+
+    client = AsyncHTTP2Client(
+        host="localhost", port=8080, secure=True,
+        verify_certificate=False
+    )
+
+    st = time.time()
+    futures = []
+    for i in range(n):
+        req = HTTPRequest(
+            url="https://localhost:8080",
+            method="POST",
+            request_timeout=3,
+            headers={
+                'User-Agent': "th2c"
+            },
+            body=json.dumps({'test': 'a', 'value': i})
+        )
+        futures.append(client.fetch(req))
+
+    yield futures
+
+    logging.info(["FINISHED", n, "requests in", time.time() - st])
+
+
+@gen.coroutine
 def main():
-    yield test_local()
+    # yield test_local()
+
+    yield test_local_many(100)
 
 
 if __name__ == "__main__":
