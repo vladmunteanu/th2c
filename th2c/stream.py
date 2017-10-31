@@ -6,6 +6,7 @@ from urlparse import urlsplit
 import traceback
 
 import h2.events
+import h2.exceptions
 from tornado import httputil, gen
 from tornado.escape import to_unicode
 from tornado.httpclient import HTTPError
@@ -53,6 +54,7 @@ class HTTP2ClientStream(object):
 
         self.stream_id = self.connection.begin_stream(self)
 
+        self.timed_out = False
         self._timeout = None
         if request.request_timeout:
             self._timeout = IOLoop.current().add_timeout(
@@ -66,6 +68,7 @@ class HTTP2ClientStream(object):
     def on_timeout(self):
         IOLoop.current().remove_timeout(self._timeout)
         self._timeout = None
+        self.timed_out = True
         self.handle_exception(HTTPError, HTTPError(599, "Timeout while processing request."), None)
 
     def handle_exception(self, typ, val, tb):
@@ -155,36 +158,41 @@ class HTTP2ClientStream(object):
 
         # send body, if any
         if self.request.body:
-            # TODO add flow control
-            to_send = len(self.request.body)
-            sent = 0
-            log.info("STREAM %i Attempting to send body of %d length", self.stream_id, len(self.request.body))
-            while sent < to_send:
-                log.info("STREAM %i Waiting for windows to be available!", self.stream_id)
-                yield self.flow_control_window.available()
-                yield self.connection.flow_control_window.available()
+            yield self.send_body()
 
-                remaining = to_send - sent
-                sw = self.flow_control_window.value
-                log.info("STREAM %i STREAM window has %d available", self.stream_id, sw)
-                cw = self.connection.flow_control_window.value
-                log.info("STREAM %i CONNECTION window has %d available", self.stream_id, cw)
-                to_consume = min(self.max_frame_size, sw, cw, remaining)
-                log.info("STREAM %i Will consume %d", self.stream_id, to_consume)
-                if to_consume == 0:
-                    # if the minimum is 0, we probably got it from connection
-                    # window, so let's try again later
-                    continue
+    @gen.coroutine
+    def send_body(self):
+        log.info("STREAM %i Attempting to send body of %d length", self.stream_id, len(self.request.body))
+        to_send = len(self.request.body)
+        sent = 0
 
-                consumed = self.flow_control_window.consume(to_consume)
-                if consumed < to_consume:
-                    raise Exception("STREAM %i Stream window less than minimum available." % self.stream_id)
+        while sent < to_send:
+            log.info("STREAM %i Waiting for windows to be available!", self.stream_id)
+            yield self.flow_control_window.available()
+            yield self.connection.flow_control_window.available()
 
-                consumed = self.connection.flow_control_window.consume(to_consume)
-                if consumed < to_consume:
-                    raise Exception("STREAM %i Connection window less than minimum available." % self.stream_id)
+            # we might be timed out already, let's exit
+            if self.timed_out:
+                break
 
-                # we consumed another chunk, let's send it
+            remaining = to_send - sent
+            sw = self.flow_control_window.value
+            log.info("STREAM %i STREAM window has %d available", self.stream_id, sw)
+            cw = self.connection.flow_control_window.value
+            log.info("STREAM %i CONNECTION window has %d available", self.stream_id, cw)
+            to_consume = min(self.max_frame_size, sw, cw, remaining)
+            log.info("STREAM %i Will consume %d", self.stream_id, to_consume)
+            if not to_consume:
+                # if the minimum is 0, we probably got it from connection
+                # window, so let's try again later
+                continue
+
+            # consume what we need from flow control windows, and send
+            self.flow_control_window.consume(to_consume)
+            self.connection.flow_control_window.consume(to_consume)
+
+            # we consumed another chunk, let's send it
+            try:
                 end_stream = False
                 if sent + to_consume >= to_send:
                     end_stream = True
@@ -195,6 +203,9 @@ class HTTP2ClientStream(object):
                     self.stream_id, data_chunk, end_stream=end_stream
                 )
                 self.connection.flush()
+            except h2.exceptions.H2Error:
+                self.flow_control_window.produce(to_consume)
+                self.connection.flow_control_window.produce(to_consume)
 
     def finish(self):
         log.info("STREAM %i finished", self.stream_id)
