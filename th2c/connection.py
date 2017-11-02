@@ -11,6 +11,7 @@ import h2.events
 import h2.exceptions
 import h2.settings
 from tornado import stack_context
+from tornado.concurrent import TracebackFuture
 from tornado.httpclient import HTTPError
 from tornado.ioloop import IOLoop
 
@@ -122,16 +123,22 @@ class HTTP2ClientConnection(object):
             start_time + self.connect_timeout, self.on_timeout
         )
 
-        # connect the tcp client, passing self.on_connect as callback
-        with stack_context.ExceptionStackContext(functools.partial(self.on_error, "during connection")):
-            self.tcp_client.connect(
-                self.host, self.port, af=socket.AF_UNSPEC,
-                ssl_options=self.ssl_context,  # self.ssl_options,
-                callback=self.on_connect
-            )
+        def connect_resolution(f):
+            exc = f.exc_info()
+            if exc is not None:
+                self.on_error("during connection", *exc)
+            else:
+                self.on_connect(f.result())
 
-    def close(self):
+        ft = self.tcp_client.connect(
+            self.host, self.port, af=socket.AF_UNSPEC,
+            ssl_options=self.ssl_context,
+        )
+        ft.add_done_callback(connect_resolution)
+
+    def close(self, reason):
         """ TODO: close the connection, sending the GOAWAY frame. """
+        log.info(["Closing HTTP2Connection with reason", reason])
         self._is_ready = False
         self._is_connected = False
 
@@ -142,6 +149,8 @@ class HTTP2ClientConnection(object):
         try:
             self.h2conn.close_connection()
             self.flush()
+        except AttributeError:
+            pass
         except:
             log.error(
                 "Could not send GOAWAY frame, connection terminated!",
@@ -153,10 +162,15 @@ class HTTP2ClientConnection(object):
 
         try:
             self.io_stream.close()
+        except AttributeError:
+            pass
         except:
             log.error("Could not close IOStream!", exc_info=True)
 
-        # TODO: close all ongoing streams?
+        if not reason and self.io_stream and self.io_stream.error:
+            reason = self.io_stream.error
+
+        self.on_connection_closed(reason)
 
     @property
     def is_connected(self):
@@ -187,9 +201,7 @@ class HTTP2ClientConnection(object):
         self.io_stream.set_nodelay(True)
 
         # set the close callback
-        self.io_stream.set_close_callback(
-            functools.partial(self.on_close, io_stream.error)
-        )
+        self.io_stream.set_close_callback(self.on_close)
 
         # initialize the connection
         self.h2conn = h2.connection.H2Connection(
@@ -209,6 +221,8 @@ class HTTP2ClientConnection(object):
         })
 
         # set the stream reading callback
+
+        # TODO: fix this example, without stack context
         with stack_context.ExceptionStackContext(functools.partial(self.on_error, "during read")):
             self.io_stream.read_bytes(
                 num_bytes=65535,
@@ -218,29 +232,20 @@ class HTTP2ClientConnection(object):
 
         self.flush()
 
-        # self.on_connection_ready()
-
-    def on_close(self, reason):
+    def on_close(self):
         """
         TODO: clean up on_close logic,
         this seems to be called from many places,
         maybe we need to call close() instead.
         """
-        log.info(["IOStream closed with reason", reason])
-        # cleanup
-        self._is_connected = False
-        self.h2conn = None
+        log.info(["IOStream closed with reason", self.io_stream.error])
 
-        if self.io_stream:
-            try:
-                self.io_stream.close()
-            except:
-                log.error("Error trying to close stream", exc_info=True)
-            finally:
-                self.io_stream = None
+        for stream_id, stream in self._ongoing_streams.items():
+            stream.handle_exception(
+                type(self.io_stream.error), self.io_stream.error, None
+            )
 
-        # callback connection closed
-        self.on_connection_closed(reason)
+        self.close(self.io_stream.error)
 
     def on_timeout(self):
         """
@@ -252,8 +257,13 @@ class HTTP2ClientConnection(object):
             )
         )
         self.timed_out = True
-        self._connect_timeout_t = False
-        self.on_close(HTTPError(599))
+
+        exc = HTTPError(599, "Timed out during connection!")
+
+        for stream_id, stream in self._ongoing_streams.items():
+            stream.handle_exception(HTTPError, exc, None)
+
+        self.close(exc)
 
     def on_error(self, phase, typ, val, tb):
         """
@@ -266,7 +276,11 @@ class HTTP2ClientConnection(object):
         log.error(
             ["HTTP2ClientConnection error ", phase, typ, val, traceback.format_tb(tb)]
         )
-        self.on_close(val)
+
+        for stream_id, stream in self._ongoing_streams.items():
+            stream.handle_exception(typ, val, tb)
+
+        self.close(val)
 
     def data_received(self, data):
         log.info(["Received data on IOStream", len(data)])
