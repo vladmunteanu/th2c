@@ -6,8 +6,7 @@ import logging
 
 from tornado import gen
 from tornado.ioloop import IOLoop
-from tornado.httpclient import HTTPRequest, HTTPError
-from tornado.simple_httpclient import SimpleAsyncHTTPClient
+from tornado.httpclient import HTTPRequest
 
 from .client import AsyncHTTP2Client
 
@@ -125,16 +124,20 @@ def test_local_many(n):
         )
         futures.append(client.fetch(req))
 
-    yield futures
+    try:
+        yield gen.multi_future([futures], quiet_exceptions=Exception)
+    except:
+        logging.error("Something bad happened")
 
     logging.info(["FINISHED", n, "requests in", time.time() - st])
 
 
 @gen.coroutine
 def main():
-    # yield test_local()
-
-    yield test_local_many(100)
+    try:
+        yield test_local_many(10)
+    except:
+        logging.error("Test failed", exc_info=True)
 
 
 if __name__ == "__main__":
