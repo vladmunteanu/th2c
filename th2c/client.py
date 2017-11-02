@@ -83,13 +83,13 @@ class AsyncHTTP2Client(object):
 
     def on_connection_closed(self, reason):
         """ Callback executed when the connection is closed. """
-        log.info(["Connection closed", reason, "active requests:", self.active_requests, self.pending_requests])
+        log.info(["Connection closed", reason, "active requests:", len(self.active_requests), len(self.pending_requests)])
         while self.pending_requests:
             key, req, callback = self.pending_requests.popleft()
             IOLoop.current().add_callback(
                 callback,
                 HTTPResponse(
-                    req, 0, error=Exception(reason),
+                    req, 0, error=reason,
                     request_time=time.time() - req.start_time
                 )
             )
@@ -191,7 +191,6 @@ class AsyncHTTP2Client(object):
                 self.active_requests[key] = (request, callback)
                 remove_from_active_cb = functools.partial(self.remove_active, key)
 
-                # self.handle_request(request, remove_from_active_cb, callback)
                 IOLoop.instance().add_callback(
                     self.handle_request,
                     request, remove_from_active_cb, callback
