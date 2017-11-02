@@ -202,7 +202,7 @@ class HTTP2ClientStream(object):
                 self.connection.h2conn.send_data(
                     self.stream_id, data_chunk, end_stream=end_stream
                 )
-                self.connection.flush()
+                yield self.connection.flush()
             except h2.exceptions.H2Error:
                 self.flow_control_window.produce(to_consume)
                 self.connection.flow_control_window.produce(to_consume)
