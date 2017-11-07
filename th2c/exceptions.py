@@ -1,23 +1,27 @@
-from tornado.httpclient import HTTPError
-
-
-class HTTP2Error(HTTPError):
+class TH2CError(Exception):
+    """
+    Base class for all exception raised by th2c.
+    """
     pass
 
 
-class HTTP2ConnectionTimeout(HTTP2Error):
-    def __init__(self, time_cost=None, reason=None):
-        super(HTTP2ConnectionTimeout, self).__init__(599)
-        self.time_cost = time_cost
-        self.reason = reason
+class RequestTimeout(TH2CError):
+    """
+    Raised when a request times out before receiving a response.
+    """
+    pass
 
 
-class HTTP2ConnectionClosed(HTTP2Error):
-    def __init__(self, reason=None):
-        super(HTTP2ConnectionClosed, self).__init__(599)
-        self.reason = reason
+class ConnectionError(TH2CError):
+    """
+    Base class for any connection errors
+    """
+    pass
 
 
-class _RequestTimeout(Exception):
+class ConnectionTimeout(ConnectionError):
+    """
+    Raised when the HTTP/2 connection could not be established fast enough.
+    """
     pass
 

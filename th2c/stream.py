@@ -1,36 +1,42 @@
-import base64
-import functools
 import httplib
 import io
 import logging
+import traceback
 from urlparse import urlsplit
 
-import traceback
-
 import h2.events
-from tornado import httputil, log as tornado_log
-from tornado.escape import to_unicode, utf8
-from tornado.httpclient import HTTPError
-from tornado.ioloop import IOLoop
+import h2.exceptions
+from tornado import httputil, gen
+from tornado.escape import to_unicode
 
+from .flowcontrol import FlowControlWindow
 from .response import HTTP2Response
-
-logger = tornado_log.gen_log
+from .exceptions import RequestTimeout
 
 log = logging.getLogger(__name__)
 
 
 class HTTP2ClientStream(object):
     ALLOWED_METHODS = {
-        "GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"
+        'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'
     }
 
-    def __init__(self, connection, request, callback_remove_active, callback_response):
+    def __init__(self, connection, request, callback_cleanup, callback_response,
+                 io_loop):
+        """
+        :param connection: connection object
+        :type connection: th2c.connection.HTTP2ClientConnection
+        :param request: request object
+        :type request: tornado.httpclient.HTTPRequest
+        :param callback_cleanup: should be called to do cleanup in parents
+        :param callback_response: should be called with the final result
+        """
+        self.io_loop = io_loop
         self.connection = connection
         self.request = request
 
         self.callback_response = callback_response
-        self.callback_remove_active = callback_remove_active
+        self.callback_cleanup = callback_cleanup
 
         self.stream_id = None
 
@@ -44,21 +50,38 @@ class HTTP2ClientStream(object):
 
         self.stream_id = self.connection.begin_stream(self)
 
+        self.closed = False
+        self.timed_out = False
+
         self._timeout = None
         if request.request_timeout:
-            self._timeout = IOLoop.current().add_timeout(
+            self._timeout = self.io_loop.add_timeout(
                 self.request.start_time + request.request_timeout,
                 self.on_timeout
             )
 
+        self.flow_control_window = FlowControlWindow(
+            initial_value=self.connection.initial_window_size
+        )
+        self.max_frame_size = self.connection.max_frame_size
+
     def on_timeout(self):
-        IOLoop.current().remove_timeout(self._timeout)
+        self.io_loop.remove_timeout(self._timeout)
         self._timeout = None
-        self.handle_exception(HTTPError, HTTPError(599), None)
+        self.timed_out = True
+
+        self.handle_exception(
+            RequestTimeout,
+            RequestTimeout('Timeout while processing request.'),
+            None
+        )
 
     def handle_exception(self, typ, val, tb):
-        log.info(["Error while processing event", typ, val, traceback.format_tb(tb)])
-        self.finish()
+        log.debug(
+            ['STREAM %i Error' % self.stream_id,
+             typ, val, traceback.format_tb(tb)]
+        )
+        self.finish(val)
 
     def handle_event(self, event):
         # read headers
@@ -81,41 +104,51 @@ class HTTP2ClientStream(object):
                 self.request.header_callback('%s %s %s\r\n' % start_line)
 
                 for k, v in self.headers.get_all():
-                    self.request.header_callback("%s: %s\r\n" % (k, v))
+                    self.request.header_callback('%s: %s\r\n' % (k, v))
 
                 self.request.header_callback('\r\n')
 
         elif isinstance(event, h2.events.DataReceived):
             # TODO: decompress if necessary
             self._chunks.append(event.data)
+        elif isinstance(event, h2.events.WindowUpdated):
+            self.flow_control_window.produce(event.delta)
         elif isinstance(event, h2.events.StreamEnded):
             self.finish()
         elif isinstance(event, h2.events.StreamReset):
-            # TODO: close stream
             self.finish()
 
+    @gen.coroutine
     def begin_request(self):
+        if not self.connection.is_ready:
+            raise Exception("Connection not ready!")
+
         parsed = urlsplit(to_unicode(self.request.url))
         if (self.request.method not in self.ALLOWED_METHODS and
                 not self.request.allow_nonstandard_methods):
-            raise KeyError("unknown method %s" % self.request.method)
+            raise KeyError('Unknown method %s' % self.request.method)
 
-        if "Host" not in self.request.headers:
+        if 'Host' not in self.request.headers:
             if not parsed.netloc:
                 self.request.headers['Host'] = self.connection.host
             elif '@' in parsed.netloc:
-                self.request.headers["Host"] = parsed.netloc.rpartition('@')[-1]
+                self.request.headers['Host'] = parsed.netloc.rpartition('@')[-1]
             else:
-                self.request.headers["Host"] = parsed.netloc
+                self.request.headers['Host'] = parsed.netloc
 
         if self.request.user_agent:
-            self.request.headers["User-Agent"] = self.request.user_agent
+            self.request.headers['User-Agent'] = self.request.user_agent
 
         if self.request.body is not None:
-            self.request.headers["Content-Length"] = str(len(self.request.body))
+            self.request.headers['Content-Length'] = str(len(self.request.body))
 
-        if self.request.method == "POST" and "Content-Type" not in self.request.headers:
-            self.request.headers["Content-Type"] = "application/x-www-form-urlencoded"
+        if (
+            self.request.method == 'POST'
+            and 'Content-Type' not in self.request.headers
+        ):
+            self.request.headers['Content-Type'] = (
+                'application/x-www-form-urlencoded'
+            )
 
         self.request.url = (
             (parsed.path or '/') +
@@ -132,43 +165,119 @@ class HTTP2ClientStream(object):
         ] + self.request.headers.items()
 
         # send headers
-        log.info(["Sending headers", http2_headers])
-        self.connection.h2conn.send_headers(
-            self.stream_id, http2_headers, end_stream=not self.request.body
-        )
+        log.debug('STREAM %d Sending headers', self.stream_id)
+        if self.connection.h2conn:
+            self.connection.h2conn.send_headers(
+                self.stream_id, http2_headers, end_stream=not self.request.body
+            )
+            self.connection.flush()
 
         # send body, if any
         if self.request.body:
-            # TODO add flow control
-            log.info(["Sending body", self.request.body])
-            self.connection.h2conn.send_data(
-                self.stream_id, self.request.body, end_stream=True
+            yield self.send_body()
+
+    @gen.coroutine
+    def send_body(self):
+        log.debug(
+            'STREAM %d Attempting to send body of %d length',
+            self.stream_id, len(self.request.body)
+        )
+        to_send = len(self.request.body)
+        sent = 0
+
+        while sent < to_send:
+            log.debug(
+                'STREAM %d Waiting for windows to be available!',
+                self.stream_id
             )
+            yield self.flow_control_window.available()
 
-        # flush everything
-        self.connection.flush()
+            # TODO: stuff can go bad between the above yields
+            # because the connection window can be set to None and an
+            # AttributeError will be raised in this case.
+            if not self.connection.is_ready:
+                return
 
-    def finish(self):
+            yield self.connection.flow_control_window.available()
+
+            if not self.connection.is_ready:
+                return
+
+            # we might be timed out already, let's exit
+            if self.timed_out:
+                break
+
+            remaining = to_send - sent
+            sw = self.flow_control_window.value
+            log.debug(
+                'STREAM %d STREAM window has %d available',
+                self.stream_id, sw
+            )
+            cw = self.connection.flow_control_window.value
+            log.debug(
+                'STREAM %d CONNECTION window has %d available',
+                self.stream_id, cw
+            )
+            to_consume = min(self.max_frame_size, sw, cw, remaining)
+            log.debug(
+                'STREAM %d Will consume %d',
+                self.stream_id, to_consume
+            )
+            if not to_consume:
+                # if the minimum is 0, we probably got it from connection
+                # window, so let's try again later
+                continue
+
+            # consume what we need from flow control windows, and send
+            self.flow_control_window.consume(to_consume)
+            self.connection.flow_control_window.consume(to_consume)
+
+            # we consumed another chunk, let's send it
+            try:
+                end_stream = False
+                if sent + to_consume >= to_send:
+                    end_stream = True
+                data_chunk = self.request.body[sent:sent + to_consume]
+                sent += to_consume
+
+                self.connection.h2conn.send_data(
+                    self.stream_id, data_chunk, end_stream=end_stream
+                )
+                self.connection.flush()
+            except h2.exceptions.H2Error:
+                self.flow_control_window.produce(to_consume)
+                self.connection.flow_control_window.produce(to_consume)
+            except:
+                log.error(
+                    "STREAM %d could not send body chunk",
+                    self.stream_id, exc_info=True
+                )
+
+    def finish(self, exc=None):
+        log.debug('STREAM %d finished', self.stream_id)
         # mark stream as finished
         self.connection.end_stream(self)
 
         if self._timeout:
-            IOLoop.current().remove_timeout(self._timeout)
+            self.io_loop.remove_timeout(self._timeout)
             self._timeout = None
 
-        # compose the body
-        data = io.BytesIO(b''.join(self._chunks))
+        if exc:
+            response = exc
+        else:
+            # compose the body
+            data = io.BytesIO(b''.join(self._chunks))
 
-        response = HTTP2Response(
-            self.request,
-            self.code,
-            reason=self.reason,
-            headers=self.headers,
-            buffer=data,
-            request_time=IOLoop.current().time() - self.request.start_time,
-            effective_url=self.request.url
-        )
+            response = HTTP2Response(
+                self.request,
+                self.code,
+                reason=self.reason,
+                headers=self.headers,
+                buffer=data,
+                request_time=self.io_loop.time() - self.request.start_time,
+                effective_url=self.request.url
+            )
 
         # run callbacks
-        self.callback_remove_active()
+        self.callback_cleanup()
         self.callback_response(response)

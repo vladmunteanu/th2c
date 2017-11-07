@@ -1,25 +1,31 @@
 from tornado import gen
 from tornado.locks import Condition
 
+from .config import DEFAULT_WINDOW_SIZE
+
 
 class FlowControlWindow(object):
 
-    def __init__(self, initial_value=0):
-        self.value = initial_value
+    __slots__ = ['condition', 'value']
+
+    def __init__(self, initial_value=DEFAULT_WINDOW_SIZE):
         self.condition = Condition()
+        self.value = initial_value
 
     @gen.coroutine
-    def consume(self, amount):
-        if self.value > amount:
-            self.condition.notify_all()
+    def available(self, timeout=None):
+        if self.value > 0:
+            raise gen.Return(self.value)
 
-        yield self.condition.wait()
+        yield self.condition.wait(timeout=timeout)
+        raise gen.Return(self.value)
 
-        consumed = min(self.value, amount)
+    def consume(self, n):
+        """Tries to consume n from value"""
+        consumed = min(self.value, n)
         self.value -= consumed
+        return consumed
 
-        raise gen.Return(consumed)
-
-    def produce(self, amount):
-        self.value += amount
+    def produce(self, n):
+        self.value += n
         self.condition.notify_all()
