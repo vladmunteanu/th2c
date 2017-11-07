@@ -62,7 +62,7 @@ def test_apple():
             scheme=scheme, host=host, port=port, path=path
         ),
         method="POST",
-        request_timeout=2,
+        request_timeout=5,
         headers={
             'User-Agent': 'th2c',
         },
@@ -87,7 +87,7 @@ def test_local():
     req = HTTPRequest(
         url="https://localhost:8080",
         method="POST",
-        request_timeout=3,
+        request_timeout=5,
         headers={
             'User-Agent': "th2c"
         },
@@ -98,8 +98,11 @@ def test_local():
         st = time.time()
         r = yield client.fetch(req)
         logging.info(["GOT RESPONSE in", time.time() - st, r.code, r.headers, r.body])
-    except:
+    except Exception as e:
         logging.error("Could not fetch", exc_info=True)
+        logging.info(["ERROR", e.__dict__])
+    finally:
+        client.close()
 
 
 @gen.coroutine
@@ -107,7 +110,7 @@ def test_local_many(n):
 
     client = AsyncHTTP2Client(
         host="localhost", port=8080, secure=True,
-        verify_certificate=False
+        verify_certificate=False, max_active_requests=10
     )
 
     st = time.time()
@@ -116,7 +119,7 @@ def test_local_many(n):
         req = HTTPRequest(
             url="https://localhost:8080",
             method="POST",
-            request_timeout=3,
+            request_timeout=5,
             headers={
                 'User-Agent': "th2c"
             },
@@ -125,7 +128,7 @@ def test_local_many(n):
         futures.append(client.fetch(req))
 
     try:
-        yield gen.multi_future([futures], quiet_exceptions=Exception)
+        yield gen.multi_future(futures, quiet_exceptions=(Exception,))
     except:
         logging.error("Something bad happened")
 
@@ -135,7 +138,8 @@ def test_local_many(n):
 @gen.coroutine
 def main():
     try:
-        yield test_local_many(10)
+        yield test_local_many(100)
+        # yield test_local()
     except:
         logging.error("Test failed", exc_info=True)
 
