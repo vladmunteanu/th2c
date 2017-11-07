@@ -1,10 +1,12 @@
 from tornado import gen
 from tornado.locks import Condition
 
-DEFAULT_WINDOW_SIZE = 65535  # bytes
+from .config import DEFAULT_WINDOW_SIZE
 
 
 class FlowControlWindow(object):
+
+    __slots__ = ['condition', 'value']
 
     def __init__(self, initial_value=DEFAULT_WINDOW_SIZE):
         self.condition = Condition()
