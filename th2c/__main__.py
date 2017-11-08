@@ -15,7 +15,8 @@ if not os.path.exists('/opt/dev/th2c/logs'):
 
 
 logging.basicConfig(
-    filename='/opt/dev/th2c/logs/th2c_run_%s.log' % (datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")),
+    filename='/opt/dev/th2c/logs/th2c_run_%s.log' %
+             (datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")),
     level=logging.DEBUG,
     format='[%(asctime)s] {%(pathname)s:%(lineno)d} %(levelname)s - %(message)s'
 )
@@ -73,7 +74,7 @@ def test_apple():
         st = time.time()
         r = yield async_http_client_ssl.fetch(req)
         logging.info(["Got response in", time.time() - st, r, r.body])
-    except:
+    except Exception:
         logging.error("Could not fetch request", exc_info=True)
 
 
@@ -97,7 +98,9 @@ def test_local():
     try:
         st = time.time()
         r = yield client.fetch(req)
-        logging.info(["GOT RESPONSE in", time.time() - st, r.code, r.headers, r.body])
+        logging.info(
+            ["GOT RESPONSE in", time.time() - st, r.code, r.headers, r.body]
+        )
     except Exception as e:
         logging.error("Could not fetch", exc_info=True)
         logging.info(["ERROR", e.__dict__])
@@ -129,7 +132,7 @@ def test_local_many(n):
 
     try:
         yield gen.multi_future(futures, quiet_exceptions=(Exception,))
-    except:
+    except Exception:
         logging.error("Something bad happened")
 
     logging.info(["FINISHED", n, "requests in", time.time() - st])
@@ -138,9 +141,9 @@ def test_local_many(n):
 @gen.coroutine
 def main():
     try:
-        yield test_local_many(100)
-        # yield test_local()
-    except:
+        # yield test_local_many(100)
+        yield test_local()
+    except Exception:
         logging.error("Test failed", exc_info=True)
 
 

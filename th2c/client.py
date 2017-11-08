@@ -10,15 +10,14 @@ import h2.exceptions
 import h2.settings
 from tornado import stack_context, httputil
 from tornado.concurrent import TracebackFuture
-from tornado.httpclient import (HTTPRequest, HTTPResponse,
-                                _RequestProxy)
+from tornado.httpclient import HTTPRequest, HTTPResponse, _RequestProxy
 from tornado.ioloop import IOLoop
 from tornado.netutil import BlockingResolver
 from tornado.tcpclient import TCPClient
 
 from .connection import HTTP2ClientConnection
-from .stream import HTTP2ClientStream
 from .exceptions import RequestTimeout
+from .stream import HTTP2ClientStream
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +43,7 @@ class AsyncHTTP2Client(object):
 
     def __init__(self, host, port, secure=True, dns_blocking=True,
                  max_active_requests=10, verify_certificate=True,
-                 io_loop=None, *args, **kwargs):
+                 ssl_key=None, ssl_cert=None, io_loop=None):
 
         self.io_loop = io_loop or IOLoop.instance()
 
@@ -71,7 +70,9 @@ class AsyncHTTP2Client(object):
             self.host, self.port, self.tcp_client, self.secure,
             self.on_connection_ready, self.on_connection_closed,
             ssl_options={
-                'verify_certificate': verify_certificate
+                'verify_certificate': verify_certificate,
+                'key': ssl_key,
+                'cert': ssl_cert
             },
             connect_timeout=DEFAULT_CONNECTION_TIMEOUT,
             max_concurrent_streams=self.max_active_requests,
@@ -133,7 +134,7 @@ class AsyncHTTP2Client(object):
 
         # TODO: MAX_HEADER_LIST_SIZE, HEADER_TABLE_SIZE
 
-    def fetch(self, request, *args, **kwargs):
+    def fetch(self, request):
         """
         Asynchronously fetches a request.
         Returns a Future that will resolve when the request finishes or
@@ -205,7 +206,9 @@ class AsyncHTTP2Client(object):
                 del self.queue_timeouts[key]
 
                 self.active_requests[key] = (request, callback)
-                remove_from_active_cb = functools.partial(self.remove_active, key)
+                remove_from_active_cb = functools.partial(
+                    self.remove_active, key
+                )
 
                 self.handle_request(request, remove_from_active_cb, callback)
 
