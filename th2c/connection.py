@@ -11,10 +11,11 @@ import h2.events
 import h2.exceptions
 import h2.settings
 from tornado import stack_context
+from tornado.iostream import StreamClosedError
 
-from .flowcontrol import FlowControlWindow
 from .config import DEFAULT_WINDOW_SIZE, MAX_FRAME_SIZE
 from .exceptions import ConnectionError, ConnectionTimeout
+from .flowcontrol import FlowControlWindow
 
 log = logging.getLogger(__name__)
 
@@ -26,8 +27,7 @@ class HTTP2ClientConnection(object):
     def __init__(self, host, port, tcp_client, secure,
                  on_connection_ready=None, on_connection_closed=None,
                  connect_timeout=None, ssl_options=None,
-                 max_concurrent_streams=None, io_loop=None,
-                 *args, **kwargs):
+                 max_concurrent_streams=None, io_loop=None):
         """
         :param host: address host
         :type host: str
@@ -113,6 +113,12 @@ class HTTP2ClientConnection(object):
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
 
+        if self.ssl_options.get('key') and self.ssl_options.get('cert'):
+            ssl_context.load_cert_chain(
+                self.ssl_options.get('cert'),
+                keyfile=self.ssl_options.get('key')
+            )
+
         ssl_context.set_ciphers('ECDHE+AESGCM')
         ssl_context.set_alpn_protocols(AlPN_PROTOCOLS)
 
@@ -161,9 +167,7 @@ class HTTP2ClientConnection(object):
             try:
                 self.h2conn.close_connection()
                 self.flush()
-            except AttributeError:
-                pass
-            except:
+            except Exception:
                 log.error(
                     'Could not send GOAWAY frame, connection terminated!',
                     exc_info=True
@@ -175,9 +179,7 @@ class HTTP2ClientConnection(object):
         if self.io_stream:
             try:
                 self.io_stream.close()
-            except AttributeError:
-                pass
-            except:
+            except Exception:
                 log.error('Could not close IOStream!', exc_info=True)
             finally:
                 self.io_stream = None
@@ -306,7 +308,7 @@ class HTTP2ClientConnection(object):
             events = self.h2conn.receive_data(data)
             if events:
                 self.process_events(events)
-        except:
+        except Exception:
             log.error(
                 'Could not process events received on the HTTP/2 connection',
                 exc_info=True
@@ -431,7 +433,7 @@ class HTTP2ClientConnection(object):
             log.debug('Flushing %d bytes to IOStream', len(data_to_send))
             try:
                 f = self.io_stream.write(data_to_send)
-            except:
+            except StreamClosedError:
                 # TODO: not clear whether we should call on_error here.
                 log.error('Immediate write exception', exc_info=True)
                 return

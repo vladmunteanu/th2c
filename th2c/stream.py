@@ -21,7 +21,8 @@ class HTTP2ClientStream(object):
         'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'
     }
 
-    def __init__(self, connection, request, callback_cleanup, callback_response,
+    def __init__(self, connection, request,
+                 callback_cleanup, callback_response,
                  io_loop):
         """
         :param connection: connection object
@@ -30,6 +31,7 @@ class HTTP2ClientStream(object):
         :type request: tornado.httpclient.HTTPRequest
         :param callback_cleanup: should be called to do cleanup in parents
         :param callback_response: should be called with the final result
+        :param io_loop: instance of a tornado IOLoop object
         """
         self.io_loop = io_loop
         self.connection = connection
@@ -232,7 +234,7 @@ class HTTP2ClientStream(object):
             self.flow_control_window.consume(to_consume)
             self.connection.flow_control_window.consume(to_consume)
 
-            # we consumed another chunk, let's send it
+            # we consumed another chunk, let's try to send it
             try:
                 end_stream = False
                 if sent + to_consume >= to_send:
@@ -247,7 +249,7 @@ class HTTP2ClientStream(object):
             except h2.exceptions.H2Error:
                 self.flow_control_window.produce(to_consume)
                 self.connection.flow_control_window.produce(to_consume)
-            except:
+            except Exception:
                 log.error(
                     "STREAM %d could not send body chunk",
                     self.stream_id, exc_info=True
