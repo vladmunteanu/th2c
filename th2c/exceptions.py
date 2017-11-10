@@ -24,4 +24,3 @@ class ConnectionTimeout(ConnectionError):
     Raised when the HTTP/2 connection could not be established fast enough.
     """
     pass
-

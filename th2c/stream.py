@@ -168,7 +168,7 @@ class HTTP2ClientStream(object):
 
         # send headers
         log.debug('STREAM %d Sending headers', self.stream_id)
-        if self.connection.h2conn:
+        if self.connection.is_ready:
             self.connection.h2conn.send_headers(
                 self.stream_id, http2_headers, end_stream=not self.request.body
             )

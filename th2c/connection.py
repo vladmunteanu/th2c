@@ -13,7 +13,10 @@ import h2.settings
 from tornado import stack_context
 from tornado.iostream import StreamClosedError
 
-from .config import DEFAULT_WINDOW_SIZE, MAX_FRAME_SIZE
+from .config import (DEFAULT_WINDOW_SIZE,
+                     MAX_FRAME_SIZE,
+                     DEFAULT_CONNECTION_TIMEOUT,
+                     MAX_CONCURRENT_STREAMS)
 from .exceptions import ConnectionError, ConnectionTimeout
 from .flowcontrol import FlowControlWindow
 
@@ -24,10 +27,10 @@ AlPN_PROTOCOLS = ['h2']
 
 class HTTP2ClientConnection(object):
 
-    def __init__(self, host, port, tcp_client, secure,
+    def __init__(self, host, port, tcp_client, secure, io_loop,
                  on_connection_ready=None, on_connection_closed=None,
-                 connect_timeout=None, ssl_options=None,
-                 max_concurrent_streams=None, io_loop=None):
+                 connect_timeout=DEFAULT_CONNECTION_TIMEOUT, ssl_options=None,
+                 max_concurrent_streams=MAX_CONCURRENT_STREAMS):
         """
         :param host: address host
         :type host: str

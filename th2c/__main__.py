@@ -7,6 +7,7 @@ import logging
 from tornado import gen
 from tornado.ioloop import IOLoop
 from tornado.httpclient import HTTPRequest
+from tornado.locks import Condition
 
 from .client import AsyncHTTP2Client
 
@@ -26,7 +27,7 @@ logging.getLogger('hpack').setLevel(logging.INFO)
 
 @gen.coroutine
 def test_apple():
-    assert("SHOULD NOT RUN THIS" is False)
+    assert('SHOULD NOT RUN THIS' is False)
 
     host = 'api.development.push.apple.com'
     port = 443
@@ -59,10 +60,10 @@ def test_apple():
     )
 
     req = HTTPRequest(
-        url="{scheme}://{host}:{port}{path}".format(
+        url='{scheme}://{host}:{port}{path}'.format(
             scheme=scheme, host=host, port=port, path=path
         ),
-        method="POST",
+        method='POST',
         request_timeout=5,
         headers={
             'User-Agent': 'th2c',
@@ -73,24 +74,24 @@ def test_apple():
     try:
         st = time.time()
         r = yield async_http_client_ssl.fetch(req)
-        logging.info(["Got response in", time.time() - st, r, r.body])
+        logging.info(['Got response in', time.time() - st, r, r.body])
     except Exception:
-        logging.error("Could not fetch request", exc_info=True)
+        logging.error('Could not fetch request', exc_info=True)
 
 
 @gen.coroutine
 def test_local():
     client = AsyncHTTP2Client(
-        host="localhost", port=8080, secure=True,
+        host='localhost', port=8080, secure=True,
         verify_certificate=False
     )
 
     req = HTTPRequest(
-        url="https://localhost:8080",
-        method="POST",
+        url='https://localhost:8080',
+        method='POST',
         request_timeout=5,
         headers={
-            'User-Agent': "th2c"
+            'User-Agent': 'th2c'
         },
         body=json.dumps({'test': 'a', 'value': 0})
     )
@@ -99,11 +100,11 @@ def test_local():
         st = time.time()
         r = yield client.fetch(req)
         logging.info(
-            ["GOT RESPONSE in", time.time() - st, r.code, r.headers, r.body]
+            ['GOT RESPONSE in', time.time() - st, r.code, r.headers, r.body]
         )
     except Exception as e:
-        logging.error("Could not fetch", exc_info=True)
-        logging.info(["ERROR", e.__dict__])
+        logging.error('Could not fetch', exc_info=True)
+        logging.info(['ERROR', e.__dict__])
     finally:
         client.close()
 
@@ -111,41 +112,71 @@ def test_local():
 @gen.coroutine
 def test_local_many(n):
 
+    cond = CounterCondition()
+
+    def future_done(future):
+        try:
+            r = future.result()
+        except Exception as e:
+            r = e
+
+        logging.info(['REQUEST FINISHED', r])
+
+        cond.produce(value=1)
+
     client = AsyncHTTP2Client(
-        host="localhost", port=8080, secure=True,
+        host='localhost', port=8080, secure=True,
         verify_certificate=False, max_active_requests=10
     )
 
     st = time.time()
-    futures = []
     for i in range(n):
         req = HTTPRequest(
-            url="https://localhost:8080",
-            method="POST",
+            url='https://localhost:8080',
+            method='POST',
             request_timeout=5,
             headers={
-                'User-Agent': "th2c"
+                'User-Agent': 'th2c'
             },
             body=json.dumps({'test': 'a', 'value': i})
         )
-        futures.append(client.fetch(req))
+        f = client.fetch(req)
+        f.add_done_callback(future_done)
 
     try:
-        yield gen.multi_future(futures, quiet_exceptions=(Exception,))
+        yield cond.wait_until(n)
     except Exception:
-        logging.error("Something bad happened")
+        logging.error('Something bad happened', exc_info=True)
 
-    logging.info(["FINISHED", n, "requests in", time.time() - st])
+    logging.info(['FINISHED', n, 'requests in', time.time() - st])
 
 
 @gen.coroutine
 def main():
     try:
-        # yield test_local_many(100)
-        yield test_local()
+        yield test_local_many(100)
+        # yield test_local()
     except Exception:
-        logging.error("Test failed", exc_info=True)
+        logging.error('Test failed', exc_info=True)
 
 
-if __name__ == "__main__":
+class CounterCondition(object):
+    def __init__(self):
+        self.condition = Condition()
+        self.counter = 0
+
+    def produce(self, value=1):
+        self.counter += value
+        self.condition.notify_all()
+
+    @gen.coroutine
+    def wait_until(self, value):
+        while True:
+            yield self.condition.wait()
+            if self.counter >= value:
+                self.counter -= value
+                break
+
+
+if __name__ == '__main__':
     IOLoop.current().run_sync(main)

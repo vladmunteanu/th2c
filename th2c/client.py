@@ -28,22 +28,24 @@ DEFAULT_CONNECTION_TIMEOUT = 10  # seconds
 class AsyncHTTP2Client(object):
     CLIENT_INSTANCES = dict()
 
-    def __new__(cls, host, *args, **kwargs):
+    def __new__(cls, host, port, *args, **kwargs):
         """
-        Create an asynchronous HTTP/2 client for this host.
-        Only one instance of AsyncHTTP2Client exists per host.
+        Create an asynchronous HTTP/2 client for this (host, port).
+        Only one instance of AsyncHTTP2Client exists per (host, port).
         """
-        if host in cls.CLIENT_INSTANCES:
-            client = cls.CLIENT_INSTANCES[host]
+        if (host, port) in cls.CLIENT_INSTANCES:
+            client = cls.CLIENT_INSTANCES[(host, port)]
         else:
             client = super(AsyncHTTP2Client, cls).__new__(cls)
-            cls.CLIENT_INSTANCES[host] = client
+            cls.CLIENT_INSTANCES[(host, port)] = client
 
         return client
 
     def __init__(self, host, port, secure=True, dns_blocking=True,
                  max_active_requests=10, verify_certificate=True,
-                 ssl_key=None, ssl_cert=None, io_loop=None):
+                 ssl_key=None, ssl_cert=None, io_loop=None,
+                 _connection_cls=HTTP2ClientConnection,
+                 _stream_cls=HTTP2ClientStream):
 
         self.io_loop = io_loop or IOLoop.instance()
 
@@ -66,8 +68,11 @@ class AsyncHTTP2Client(object):
         self.queue_timeouts = dict()
         self.active_requests = dict()
 
-        self.connection = HTTP2ClientConnection(
-            self.host, self.port, self.tcp_client, self.secure,
+        self.connection_cls = _connection_cls
+        self.stream_cls = _stream_cls
+
+        self.connection = self.connection_cls(
+            self.host, self.port, self.tcp_client, self.secure, self.io_loop,
             self.on_connection_ready, self.on_connection_closed,
             ssl_options={
                 'verify_certificate': verify_certificate,
@@ -76,7 +81,6 @@ class AsyncHTTP2Client(object):
             },
             connect_timeout=DEFAULT_CONNECTION_TIMEOUT,
             max_concurrent_streams=self.max_active_requests,
-            io_loop=self.io_loop
         )
         self.connection.add_event_handler(
             h2.events.RemoteSettingsChanged, self.on_settings_changed
@@ -118,21 +122,14 @@ class AsyncHTTP2Client(object):
         )
         if max_requests:
             log.debug(
-                "Updating maximum concurrent streams according to "
-                "remote settings (old: %s, new: %s).",
+                'Updating maximum concurrent streams according to '
+                'remote settings (old: %s, new: %s).',
                 max_requests.original_value,
                 max_requests.new_value
             )
             self.max_active_requests = min(
                 max_requests.new_value, self.max_active_requests
             )
-            if max_requests.new_value > max_requests.original_value:
-                # we might be able to process more requests, so let's try
-                self.process_pending_requests()
-
-        # TODO: read maximum frame size (MAX_FRAME_SIZE)
-
-        # TODO: MAX_HEADER_LIST_SIZE, HEADER_TABLE_SIZE
 
     def fetch(self, request):
         """
@@ -169,7 +166,10 @@ class AsyncHTTP2Client(object):
 
         # if we are already processing maximum concurrent requests,
         # set a timeout for the time spent in queue
-        if len(self.active_requests) >= self.max_active_requests:
+        if (
+            len(self.active_requests) >= self.max_active_requests
+            or not self.connection.is_ready
+        ):
             timeout_handle = self.io_loop.add_timeout(
                 self.io_loop.time() + request.request_timeout,
                 functools.partial(self.on_queue_timeout, key)
@@ -217,15 +217,15 @@ class AsyncHTTP2Client(object):
         Create an HTTP2Stream object for the current request.
         :param request: client request
         :type request: HTTPRequest
-        :param callback_clear_active: function, executed when the request
-                                      finishes. Removes the current stream
+        :param callback_clear_active: function executed when the request
+                                      finishes, removes the current stream
                                       from the list of active streams.
         :param callback: function executed when the request finishes
         """
         if not self.connection.is_ready:
             log.error('Trying to send a request while connection is not ready!')
 
-        stream = HTTP2ClientStream(
+        stream = self.stream_cls(
             self.connection, request, callback_clear_active, callback,
             self.io_loop
         )
@@ -251,10 +251,13 @@ class AsyncHTTP2Client(object):
 
     def on_queue_timeout(self, key):
         """ Called when a request timeout expires while in processing queue. """
+        # remove the pending request
         request, callback, timeout_handle = self.queue_timeouts[key]
         self.pending_requests.remove((key, request, callback))
-        callback(RequestTimeout('Timeout in processing queue'))
         del self.queue_timeouts[key]
+
+        # call the request's associated callback with RequestTimeout
+        callback(RequestTimeout('Timeout in processing queue'))
 
     def close(self):
         log.debug('Closing HTTP/2 client!')
