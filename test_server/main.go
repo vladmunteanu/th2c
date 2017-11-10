@@ -12,7 +12,7 @@ func main() {
 
 	http.HandleFunc("/", index_main)
 
-	srv.ListenAndServeTLS("certs/localhost.cert", "certs/localhost.key")
+	srv.ListenAndServeTLS("test_server/certs/localhost.cert", "test_server/certs/localhost.key")
 
 }
 
