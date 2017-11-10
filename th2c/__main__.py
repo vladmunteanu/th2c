@@ -146,7 +146,7 @@ def test_local_many(n):
         futures.append(f)
 
     try:
-        yield cond.consume(n)
+        yield cond.wait_until(n)
     except Exception:
         logging.error("Something bad happened", exc_info=True)
 
@@ -172,7 +172,7 @@ class CounterCondition(object):
         self.condition.notify_all()
 
     @gen.coroutine
-    def consume(self, value):
+    def wait_until(self, value):
         while True:
             yield self.condition.wait()
             if self.counter >= value:
