@@ -7,6 +7,7 @@ import logging
 from tornado import gen
 from tornado.ioloop import IOLoop
 from tornado.httpclient import HTTPRequest
+from tornado.locks import Condition
 
 from .client import AsyncHTTP2Client
 
@@ -111,6 +112,18 @@ def test_local():
 @gen.coroutine
 def test_local_many(n):
 
+    cond = CounterCondition()
+
+    def future_done(future):
+        try:
+            r = future.result()
+        except Exception as e:
+            r = e
+
+        logging.info(["REQUEST FINISHED", r])
+
+        cond.produce(value=1)
+
     client = AsyncHTTP2Client(
         host="localhost", port=8080, secure=True,
         verify_certificate=False, max_active_requests=10
@@ -128,12 +141,14 @@ def test_local_many(n):
             },
             body=json.dumps({'test': 'a', 'value': i})
         )
-        futures.append(client.fetch(req))
+        f = client.fetch(req)
+        f.add_done_callback(future_done)
+        futures.append(f)
 
     try:
-        yield gen.multi_future(futures, quiet_exceptions=(Exception,))
+        yield cond.consume(n)
     except Exception:
-        logging.error("Something bad happened")
+        logging.error("Something bad happened", exc_info=True)
 
     logging.info(["FINISHED", n, "requests in", time.time() - st])
 
@@ -141,10 +156,28 @@ def test_local_many(n):
 @gen.coroutine
 def main():
     try:
-        # yield test_local_many(100)
-        yield test_local()
+        yield test_local_many(100)
+        # yield test_local()
     except Exception:
         logging.error("Test failed", exc_info=True)
+
+
+class CounterCondition(object):
+    def __init__(self):
+        self.condition = Condition()
+        self.counter = 0
+
+    def produce(self, value=1):
+        self.counter += value
+        self.condition.notify_all()
+
+    @gen.coroutine
+    def consume(self, value):
+        while True:
+            yield self.condition.wait()
+            if self.counter >= value:
+                self.counter -= value
+                break
 
 
 if __name__ == "__main__":
