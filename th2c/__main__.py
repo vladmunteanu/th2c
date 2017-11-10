@@ -91,7 +91,7 @@ def test_local():
         method='POST',
         request_timeout=5,
         headers={
-            'User-Agent': "th2c"
+            'User-Agent': 'th2c'
         },
         body=json.dumps({'test': 'a', 'value': 0})
     )
