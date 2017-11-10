@@ -58,8 +58,8 @@ class AsyncHTTP2ClientTestCase(AsyncTestCase):
             io_loop=self.io_loop
         )
 
-        req1 = HTTPRequest(url="host", method="GET")
-        req2 = HTTPRequest(url="host", method="GET")
+        req1 = HTTPRequest(url='host', method='GET')
+        req2 = HTTPRequest(url='host', method='GET')
 
         client.fetch(req1)
         client.fetch(req2)
@@ -128,7 +128,7 @@ class AsyncHTTP2ClientTestCase(AsyncTestCase):
             io_loop=self.io_loop
         )
 
-        req1 = HTTPRequest(url="host", method="GET", request_timeout=1)
+        req1 = HTTPRequest(url='host', method='GET', request_timeout=1)
 
         f = client.fetch(req1)
         result = {}

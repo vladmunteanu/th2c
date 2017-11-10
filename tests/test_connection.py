@@ -18,7 +18,7 @@ class HTTP2ClientConnectionTestCase(AsyncTestCase):
         connection_closed = mock.MagicMock()
 
         connection = HTTP2ClientConnection(
-            "host", 1234, tcp_client, False, self.io_loop,
+            'host', 1234, tcp_client, False, self.io_loop,
             connect_timeout=1,
             on_connection_closed=connection_closed
         )
@@ -35,7 +35,7 @@ class HTTP2ClientConnectionTestCase(AsyncTestCase):
         connection_closed = mock.MagicMock()
 
         connection = HTTP2ClientConnection(
-            "host", 1234, tcp_client, False, self.io_loop,
+            'host', 1234, tcp_client, False, self.io_loop,
             on_connection_closed=connection_closed
         )
 
@@ -43,7 +43,7 @@ class HTTP2ClientConnectionTestCase(AsyncTestCase):
 
         self.assertEqual(connection.closed, False)
 
-        exc = Exception("some error")
+        exc = Exception('some error')
         connection.close(exc)
 
         connection_closed.assert_called_once_with(exc)
