@@ -1,1 +1,7 @@
-to run go server: GODEBUG=http2debug=1 go run main.go 
+=========
+dev info:
+=========
+
+__run tests: `nosetests tests`__
+
+__run go server: `GODEBUG=http2debug=1 go run test_server/main.go`__
