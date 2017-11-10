@@ -72,7 +72,9 @@ class AsyncHTTP2ClientTestCase(AsyncTestCase):
 
         client.max_active_requests += 1
         client.process_pending_requests()
-        self.assertEqual(len(client.active_requests), maxmimum_active_requests + 1)
+        self.assertEqual(
+            len(client.active_requests), maxmimum_active_requests + 1
+        )
 
     def test_max_active_requests_not_updated(self):
         connection_inst = mock.MagicMock(spec=HTTP2ClientConnection)
