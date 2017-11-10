@@ -122,8 +122,8 @@ class AsyncHTTP2Client(object):
         )
         if max_requests:
             log.debug(
-                "Updating maximum concurrent streams according to "
-                "remote settings (old: %s, new: %s).",
+                'Updating maximum concurrent streams according to '
+                'remote settings (old: %s, new: %s).',
                 max_requests.original_value,
                 max_requests.new_value
             )
