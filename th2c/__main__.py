@@ -27,7 +27,7 @@ logging.getLogger('hpack').setLevel(logging.INFO)
 
 @gen.coroutine
 def test_apple():
-    assert("SHOULD NOT RUN THIS" is False)
+    assert('SHOULD NOT RUN THIS' is False)
 
     host = 'api.development.push.apple.com'
     port = 443
@@ -60,10 +60,10 @@ def test_apple():
     )
 
     req = HTTPRequest(
-        url="{scheme}://{host}:{port}{path}".format(
+        url='{scheme}://{host}:{port}{path}'.format(
             scheme=scheme, host=host, port=port, path=path
         ),
-        method="POST",
+        method='POST',
         request_timeout=5,
         headers={
             'User-Agent': 'th2c',
@@ -74,21 +74,21 @@ def test_apple():
     try:
         st = time.time()
         r = yield async_http_client_ssl.fetch(req)
-        logging.info(["Got response in", time.time() - st, r, r.body])
+        logging.info(['Got response in', time.time() - st, r, r.body])
     except Exception:
-        logging.error("Could not fetch request", exc_info=True)
+        logging.error('Could not fetch request', exc_info=True)
 
 
 @gen.coroutine
 def test_local():
     client = AsyncHTTP2Client(
-        host="localhost", port=8080, secure=True,
+        host='localhost', port=8080, secure=True,
         verify_certificate=False
     )
 
     req = HTTPRequest(
-        url="https://localhost:8080",
-        method="POST",
+        url='https://localhost:8080',
+        method='POST',
         request_timeout=5,
         headers={
             'User-Agent': "th2c"
@@ -100,11 +100,11 @@ def test_local():
         st = time.time()
         r = yield client.fetch(req)
         logging.info(
-            ["GOT RESPONSE in", time.time() - st, r.code, r.headers, r.body]
+            ['GOT RESPONSE in', time.time() - st, r.code, r.headers, r.body]
         )
     except Exception as e:
-        logging.error("Could not fetch", exc_info=True)
-        logging.info(["ERROR", e.__dict__])
+        logging.error('Could not fetch', exc_info=True)
+        logging.info(['ERROR', e.__dict__])
     finally:
         client.close()
 
@@ -120,23 +120,23 @@ def test_local_many(n):
         except Exception as e:
             r = e
 
-        logging.info(["REQUEST FINISHED", r])
+        logging.info(['REQUEST FINISHED', r])
 
         cond.produce(value=1)
 
     client = AsyncHTTP2Client(
-        host="localhost", port=8080, secure=True,
+        host='localhost', port=8080, secure=True,
         verify_certificate=False, max_active_requests=10
     )
 
     st = time.time()
     for i in range(n):
         req = HTTPRequest(
-            url="https://localhost:8080",
-            method="POST",
+            url='https://localhost:8080',
+            method='POST',
             request_timeout=5,
             headers={
-                'User-Agent': "th2c"
+                'User-Agent': 'th2c'
             },
             body=json.dumps({'test': 'a', 'value': i})
         )
@@ -146,9 +146,9 @@ def test_local_many(n):
     try:
         yield cond.wait_until(n)
     except Exception:
-        logging.error("Something bad happened", exc_info=True)
+        logging.error('Something bad happened', exc_info=True)
 
-    logging.info(["FINISHED", n, "requests in", time.time() - st])
+    logging.info(['FINISHED', n, 'requests in', time.time() - st])
 
 
 @gen.coroutine
@@ -157,7 +157,7 @@ def main():
         yield test_local_many(100)
         # yield test_local()
     except Exception:
-        logging.error("Test failed", exc_info=True)
+        logging.error('Test failed', exc_info=True)
 
 
 class CounterCondition(object):
@@ -178,5 +178,5 @@ class CounterCondition(object):
                 break
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     IOLoop.current().run_sync(main)
