@@ -130,7 +130,6 @@ def test_local_many(n):
     )
 
     st = time.time()
-    futures = []
     for i in range(n):
         req = HTTPRequest(
             url="https://localhost:8080",
@@ -143,7 +142,6 @@ def test_local_many(n):
         )
         f = client.fetch(req)
         f.add_done_callback(future_done)
-        futures.append(f)
 
     try:
         yield cond.wait_until(n)
