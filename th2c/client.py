@@ -72,9 +72,8 @@ class AsyncHTTP2Client(object):
         self.stream_cls = _stream_cls
 
         self.connection = self.connection_cls(
-            self.host, self.port, self.tcp_client, self.secure,
+            self.host, self.port, self.tcp_client, self.secure, self.io_loop,
             self.on_connection_ready, self.on_connection_closed,
-            self.io_loop,
             ssl_options={
                 'verify_certificate': verify_certificate,
                 'key': ssl_key,
