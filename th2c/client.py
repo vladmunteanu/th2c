@@ -30,8 +30,8 @@ class AsyncHTTP2Client(object):
 
     def __new__(cls, host, port, *args, **kwargs):
         """
-        Create an asynchronous HTTP/2 client for this host.
-        Only one instance of AsyncHTTP2Client exists per host.
+        Create an asynchronous HTTP/2 client for this (host, port).
+        Only one instance of AsyncHTTP2Client exists per (host, port).
         """
         if (host, port) in cls.CLIENT_INSTANCES:
             client = cls.CLIENT_INSTANCES[(host, port)]
