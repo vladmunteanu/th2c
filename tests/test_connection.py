@@ -75,7 +75,7 @@ class HTTP2ClientConnectionTestCase(AsyncTestCase):
 
         self.assertEqual(connection.is_connected, True)
 
-        exc = Exception("testing")
+        exc = Exception('testing')
         io_stream.error = exc
         connection.on_close()
 
