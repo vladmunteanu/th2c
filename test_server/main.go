@@ -18,7 +18,7 @@ func main() {
 
 func index_main(w http.ResponseWriter, r *http.Request) {
 
-	time.Sleep(2000 * time.Millisecond)
+	time.Sleep(1000 * time.Millisecond)
 
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
