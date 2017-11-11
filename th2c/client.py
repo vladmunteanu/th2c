@@ -15,6 +15,7 @@ from tornado.ioloop import IOLoop
 from tornado.netutil import BlockingResolver
 from tornado.tcpclient import TCPClient
 
+from .config import DEFAULT_RECONNECT_INTERVAL
 from .connection import HTTP2ClientConnection
 from .exceptions import RequestTimeout
 from .stream import HTTP2ClientStream
@@ -41,9 +42,11 @@ class AsyncHTTP2Client(object):
 
         return client
 
-    def __init__(self, host, port, secure=True, dns_blocking=True,
-                 max_active_requests=10, verify_certificate=True,
-                 ssl_key=None, ssl_cert=None, io_loop=None,
+    def __init__(self, host, port, secure=True, verify_certificate=True,
+                 ssl_key=None, ssl_cert=None,
+                 max_active_requests=10, io_loop=None,
+                 auto_reconnect=False,
+                 auto_reconnect_interval=DEFAULT_RECONNECT_INTERVAL,
                  _connection_cls=HTTP2ClientConnection,
                  _stream_cls=HTTP2ClientStream):
 
@@ -51,17 +54,16 @@ class AsyncHTTP2Client(object):
 
         self.host = host
         self.port = port
+
         self.secure = secure
+        self.verify_certificate = verify_certificate
+        self.ssl_key = ssl_key
+        self.ssl_cert = ssl_cert
 
         self.closed = False
 
-        # use BlockingResolver if dns_blocking is True,
-        # otherwise don't pass any, uses whichever is already configured.
-        if dns_blocking:
-            self.tcp_client = TCPClient(resolver=BlockingResolver())
-        else:
-            self.tcp_client = TCPClient()
-
+        self.auto_reconnect = auto_reconnect
+        self.auto_reconnect_interval = auto_reconnect_interval
         self.max_active_requests = max_active_requests
 
         self.pending_requests = collections.deque()
@@ -71,13 +73,20 @@ class AsyncHTTP2Client(object):
         self.connection_cls = _connection_cls
         self.stream_cls = _stream_cls
 
+        self.tcp_client = TCPClient()
+
+        self.connection = None
+
+        self.connect()
+
+    def connect(self):
         self.connection = self.connection_cls(
             self.host, self.port, self.tcp_client, self.secure, self.io_loop,
             self.on_connection_ready, self.on_connection_closed,
             ssl_options={
-                'verify_certificate': verify_certificate,
-                'key': ssl_key,
-                'cert': ssl_cert
+                'verify_certificate': self.verify_certificate,
+                'key': self.ssl_key,
+                'cert': self.ssl_cert
             },
             connect_timeout=DEFAULT_CONNECTION_TIMEOUT,
             max_concurrent_streams=self.max_active_requests,
@@ -105,14 +114,22 @@ class AsyncHTTP2Client(object):
         if not isinstance(reason, Exception):
             reason = Exception(reason)
 
-        while self.pending_requests:
-            key, req, callback = self.pending_requests.popleft()
+        self.connection = None
 
-            self.io_loop.add_callback(
-                callback, reason
+        if self.auto_reconnect:
+            log.info('Attempting to reconnect after %d seconds', self.auto_reconnect_interval)
+            self.io_loop.add_timeout(
+                self.io_loop.time() + self.auto_reconnect_interval, self.connect
             )
+        else:
+            while self.pending_requests:
+                key, req, callback = self.pending_requests.popleft()
+                if key in self.queue_timeouts:
+                    request, callback, timeout_handle = self.queue_timeouts[key]
+                    self.io_loop.remove_timeout(timeout_handle)
+                    del self.queue_timeouts[key]
 
-        # TODO: Reconnect after a customizable refresh_interval value
+                callback(reason)
 
     def on_settings_changed(self, event):
         """ Called to handle a RemoteSettingsChanged event. """
@@ -191,7 +208,8 @@ class AsyncHTTP2Client(object):
     def process_pending_requests(self):
         with stack_context.NullContext():
             while (
-                self.connection.is_ready
+                self.connection
+                and self.connection.is_ready
                 and len(self.active_requests) < self.max_active_requests
                 and self.pending_requests
             ):
@@ -262,4 +280,5 @@ class AsyncHTTP2Client(object):
     def close(self):
         log.debug('Closing HTTP/2 client!')
         self.closed = True
-        self.connection.close('Client closed!')
+        if self.connection:
+            self.connection.close('Client closed!')
