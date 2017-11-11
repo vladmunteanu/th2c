@@ -166,7 +166,7 @@ class CounterCondition(object):
             yield self.condition.wait()
             if self.counter >= value:
                 self.counter -= value
-                break
+                return
 
 
 @gen.coroutine
