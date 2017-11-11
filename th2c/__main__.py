@@ -122,7 +122,7 @@ def test_local_many(n):
 
         logging.info(['REQUEST FINISHED', r])
 
-        cond.produce(value=1)
+        cond.increment(value=1)
 
     client = AsyncHTTP2Client(
         host='localhost', port=8080, secure=True,
@@ -151,21 +151,12 @@ def test_local_many(n):
     logging.info(['FINISHED', n, 'requests in', time.time() - st])
 
 
-@gen.coroutine
-def main():
-    try:
-        yield test_local_many(100)
-        # yield test_local()
-    except Exception:
-        logging.error('Test failed', exc_info=True)
-
-
 class CounterCondition(object):
     def __init__(self):
         self.condition = Condition()
         self.counter = 0
 
-    def produce(self, value=1):
+    def increment(self, value=1):
         self.counter += value
         self.condition.notify_all()
 
@@ -176,6 +167,15 @@ class CounterCondition(object):
             if self.counter >= value:
                 self.counter -= value
                 break
+
+
+@gen.coroutine
+def main():
+    try:
+        yield test_local_many(100)
+        # yield test_local()
+    except Exception:
+        logging.error('Test failed', exc_info=True)
 
 
 if __name__ == '__main__':
