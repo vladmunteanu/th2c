@@ -126,7 +126,7 @@ def test_local_many(n):
 
     client = AsyncHTTP2Client(
         host='localhost', port=8080, secure=True,
-        verify_certificate=False, max_active_requests=10
+        verify_certificate=False, max_active_requests=10, auto_reconnect=True, auto_reconnect_interval=1
     )
 
     st = time.time()
@@ -134,7 +134,7 @@ def test_local_many(n):
         req = HTTPRequest(
             url='https://localhost:8080',
             method='POST',
-            request_timeout=5,
+            request_timeout=15,
             headers={
                 'User-Agent': 'th2c'
             },
@@ -166,7 +166,7 @@ class CounterCondition(object):
             yield self.condition.wait()
             if self.counter >= value:
                 self.counter -= value
-                break
+                return
 
 
 @gen.coroutine

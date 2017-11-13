@@ -144,3 +144,110 @@ class AsyncHTTP2ClientTestCase(AsyncTestCase):
         yield gen.sleep(1.1)
 
         self.assertIsInstance(result['r'], RequestTimeout)
+
+    def test_close(self):
+        connection_inst = mock.MagicMock(spec=HTTP2ClientConnection)
+        connection_inst.is_ready = False
+        connection_cls = mock.create_autospec(HTTP2ClientConnection)
+        connection_cls.return_value = connection_inst
+
+        stream_cls = mock.create_autospec(HTTP2ClientStream)
+
+        client = AsyncHTTP2Client(
+            'host', 1234,
+            _connection_cls=connection_cls,
+            _stream_cls=stream_cls,
+            io_loop=self.io_loop
+        )
+        client.on_connection_closed = mock.MagicMock()
+
+        client.close()
+
+        self.assertEqual(client.closed, True)
+        connection_inst.close.assert_called_once()
+
+    def test_connection_closed_stops_pending(self):
+        connection_inst = mock.MagicMock(spec=HTTP2ClientConnection)
+        connection_inst.is_ready = False
+        connection_cls = mock.create_autospec(HTTP2ClientConnection)
+        connection_cls.return_value = connection_inst
+
+        stream_cls = mock.create_autospec(HTTP2ClientStream)
+
+        client = AsyncHTTP2Client(
+            'host', 1234,
+            _connection_cls=connection_cls,
+            _stream_cls=stream_cls,
+            io_loop=self.io_loop
+        )
+
+        # add 2 pending requests
+        f1 = client.fetch(HTTPRequest(url='host', method='GET'))
+        f2 = client.fetch(HTTPRequest(url='host', method='GET'))
+
+        results = []
+
+        def future_done(f):
+            results.append(f.exc_info()[1])
+
+        f1.add_done_callback(future_done)
+        f2.add_done_callback(future_done)
+
+        # assert len of pending requests is 2
+        self.assertEqual(len(client.pending_requests), 2)
+
+        # call on_connection_closed with client.auto_reconnect = False
+        client.auto_reconnect = False
+        client.on_connection_closed('it closed')
+
+        # assert len of pending requests is 0
+        self.assertEqual(len(client.pending_requests), 0)
+        for res in results:
+            self.assertIsInstance(res, Exception)
+
+    @gen_test
+    def test_connection_closed_auto_reconnect(self):
+        connection_inst = mock.MagicMock(spec=HTTP2ClientConnection)
+        connection_inst.is_ready = False
+        connection_cls = mock.create_autospec(HTTP2ClientConnection)
+        connection_cls.return_value = connection_inst
+
+        stream_cls = mock.create_autospec(HTTP2ClientStream)
+
+        client = AsyncHTTP2Client(
+            'host', 1234,
+            _connection_cls=connection_cls,
+            _stream_cls=stream_cls,
+            io_loop=self.io_loop
+        )
+
+        # add 2 pending requests
+        f1 = client.fetch(HTTPRequest(url='host', method='GET'))
+        f2 = client.fetch(HTTPRequest(url='host', method='GET'))
+
+        results = []
+
+        def future_done(f):
+            results.append(f.exc_info() or f.result())
+
+        f1.add_done_callback(future_done)
+        f2.add_done_callback(future_done)
+
+        # assert len of pending requests is 2
+        self.assertEqual(len(client.pending_requests), 2)
+
+        # call on_connection_closed with client.auto_reconnect = True
+        client.auto_reconnect = True
+        client.auto_reconnect_interval = 1
+
+        connection_inst.reset_mock()
+        client.on_connection_closed('it closed')
+
+        connection_inst.connect.assert_not_called()
+        self.assertEqual(client.connection, None)
+
+        # assert len of pending requests is 2
+        self.assertEqual(len(client.pending_requests), 2)
+
+        yield gen.sleep(1)
+        client.connection.connect.assert_called_once()
