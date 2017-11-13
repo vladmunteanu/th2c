@@ -117,9 +117,13 @@ class AsyncHTTP2Client(object):
         self.connection = None
 
         if self.auto_reconnect:
-            log.info('Attempting to reconnect after %d seconds', self.auto_reconnect_interval)
+            log.info(
+                'Attempting to reconnect after %d seconds',
+                self.auto_reconnect_interval
+            )
             self.io_loop.add_timeout(
-                self.io_loop.time() + self.auto_reconnect_interval, self.connect
+                self.io_loop.time() + self.auto_reconnect_interval,
+                self.connect
             )
         else:
             while self.pending_requests:
@@ -240,9 +244,6 @@ class AsyncHTTP2Client(object):
                                       from the list of active streams.
         :param callback: function executed when the request finishes
         """
-        if not self.connection.is_ready:
-            log.error('Trying to send a request while connection is not ready!')
-
         stream = self.stream_cls(
             self.connection, request, callback_clear_active, callback,
             self.io_loop
@@ -261,14 +262,20 @@ class AsyncHTTP2Client(object):
             stream.begin_request()
 
     def remove_active(self, key):
-        """ Called when a request is finished """
+        """
+        Called when a request is finished to remove it from
+        current active requests.
+        """
         log.debug('Stream removed from active requests')
         del self.active_requests[key]
 
         self.process_pending_requests()
 
     def on_queue_timeout(self, key):
-        """ Called when a request timeout expires while in processing queue. """
+        """
+        Called when a request times out while in processing queue.
+        Removes the request from pending list.
+        """
         # remove the pending request
         request, callback, timeout_handle = self.queue_timeouts[key]
         self.pending_requests.remove((key, request, callback))
@@ -278,6 +285,14 @@ class AsyncHTTP2Client(object):
         callback(RequestTimeout('Timeout in processing queue'))
 
     def close(self):
+        """
+        Closes the AsyncHTTP2Client by terminating the connection and setting
+        the `closed` flag.
+
+        We assume the connection will call on_connection_closed.
+
+        :return:
+        """
         log.debug('Closing HTTP/2 client!')
         self.closed = True
         if self.connection:
