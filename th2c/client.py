@@ -12,18 +12,14 @@ from tornado import stack_context, httputil
 from tornado.concurrent import TracebackFuture
 from tornado.httpclient import HTTPRequest, HTTPResponse, _RequestProxy
 from tornado.ioloop import IOLoop
-from tornado.netutil import BlockingResolver
 from tornado.tcpclient import TCPClient
 
-from .config import DEFAULT_RECONNECT_INTERVAL
+from .config import DEFAULT_RECONNECT_INTERVAL, DEFAULT_CONNECTION_TIMEOUT
 from .connection import HTTP2ClientConnection
 from .exceptions import RequestTimeout
 from .stream import HTTP2ClientStream
 
 log = logging.getLogger(__name__)
-
-INITIAL_WINDOW_SIZE = 65535
-DEFAULT_CONNECTION_TIMEOUT = 10  # seconds
 
 
 class AsyncHTTP2Client(object):
