@@ -245,15 +245,6 @@ class AsyncHTTP2Client(object):
             self.io_loop
         )
 
-        # fut = stream.begin_request()
-        #
-        # def handle_request_finished(f):
-        #     exc_info = f.exc_info()
-        #     if exc_info:
-        #         stream.handle_exception(*exc_info)
-        #
-        # fut.add_done_callback(handle_request_finished)
-
         with stack_context.ExceptionStackContext(stream.handle_exception):
             stream.begin_request()
 
