@@ -125,7 +125,7 @@ class AsyncHTTP2Client(object):
             while self.pending_requests:
                 key, req, callback = self.pending_requests.popleft()
                 if key in self.queue_timeouts:
-                    request, callback, timeout_handle = self.queue_timeouts[key]
+                    _, _, timeout_handle = self.queue_timeouts[key]
                     self.io_loop.remove_timeout(timeout_handle)
                     del self.queue_timeouts[key]
 
