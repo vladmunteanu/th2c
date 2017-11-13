@@ -22,6 +22,7 @@ setup(
     long_description=readme,
     author='Vlad Stefan Munteanu',
     author_email='vladstefanmunteanu@gmail.com',
+    url='https://github.com/vladmunteanu/th2c',
     packages=['th2c'],
     package_data={'': ['LICENSE', 'README.rst']},
     package_dir={'th2c': 'th2c'},
