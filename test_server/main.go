@@ -2,7 +2,7 @@ package main
 
 import (
 	"net/http"
-	"time"
+	"fmt"
 )
 
 func main() {
@@ -14,12 +14,10 @@ func main() {
 
 	srv.ListenAndServeTLS("test_server/certs/localhost.cert", "test_server/certs/localhost.key")
 
+	fmt.Println("Listening for HTTP/2 connections on localhost:8080")
 }
 
 func index_main(w http.ResponseWriter, r *http.Request) {
-
-	time.Sleep(1000 * time.Millisecond)
-
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	// allow pre-flight headers
