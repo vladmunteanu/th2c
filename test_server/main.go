@@ -2,7 +2,6 @@ package main
 
 import (
 	"net/http"
-	"time"
 	"fmt"
 )
 
@@ -19,9 +18,6 @@ func main() {
 }
 
 func index_main(w http.ResponseWriter, r *http.Request) {
-
-	time.Sleep(1000 * time.Millisecond)
-
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	// allow pre-flight headers
