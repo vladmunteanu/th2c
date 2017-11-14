@@ -51,9 +51,13 @@ The Vagrant setup is located under vm_, an Ubuntu 16.04 64bit box with Go and Py
 
 For a minimal set of "integration tests", a Go web server is included in test_server_ that simply echoes back what it receives.
 
-You can run it in debug mode, from the project directory, by executing ``GODEBUG=http2debug=1 go run test_server/main.go``.
+You can run it in debug mode, from the project directory, by executing:
 
-After the server is started, you should run the client by executing ``python -m th2c``.
+    ``GODEBUG=http2debug=1 go run test_server/main.go``.
+
+After the server is started, you should run the client by executing:
+
+    ``python -m th2c``.
 
 Log files should be produced under /opt/dev/th2c/logs.
 
