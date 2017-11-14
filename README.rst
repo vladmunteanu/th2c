@@ -3,6 +3,7 @@ Async HTTP/2 Client
 ===================
 
 A simple asynchronous HTTP/2 client for Tornado_, based on the awesome h2_ library.
+
 Intended for Python 2 (>= 2.7.9).
 
 This package is in a very early development stage, so expect bugs or changes in the API.
@@ -12,7 +13,7 @@ This package is in a very early development stage, so expect bugs or changes in 
 Example
 =======
 
-Assuming you are
+Usage in a coroutine may be:
 
 .. code-block:: python
 
@@ -49,9 +50,11 @@ If you wish to create a development environment to work on th2c, you can use a V
 The Vagrant setup is located under vm_, an Ubuntu 16.04 64bit box with Go and Python 2 installed, that maps the project directory under ``/opt/dev/th2c``.
 
 For a minimal set of "integration tests", a Go web server is included in test_server_ that simply echoes back what it receives.
+
 You can run it in debug mode, from the project directory, by executing ``GODEBUG=http2debug=1 go run test_server/main.go``.
 
 After the server is started, you should run the client by executing ``python -m th2c``.
+
 Log files should be produced under /opt/dev/th2c/logs.
 
 You can also run unit tests with: ``nosetests tests``
