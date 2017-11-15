@@ -184,8 +184,8 @@ class AsyncHTTP2Client(object):
         # if we are already processing maximum concurrent requests,
         # set a timeout for the time spent in queue
         if (
-            len(self.active_requests) >= self.max_active_requests
-            or not self.connection.is_ready
+            not self.connection or not self.connection.is_ready
+            or len(self.active_requests) >= self.max_active_requests
         ):
             timeout_handle = self.io_loop.add_timeout(
                 self.io_loop.time() + request.request_timeout,
