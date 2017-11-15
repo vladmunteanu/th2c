@@ -1,6 +1,6 @@
 class TH2CError(Exception):
     """
-    Base class for all exception raised by th2c.
+    Base class for all exceptions raised by th2c.
     """
     pass
 
