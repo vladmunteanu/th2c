@@ -7,7 +7,7 @@ from tornado.httpclient import HTTPRequest
 from th2c.client import AsyncHTTP2Client
 from th2c.connection import HTTP2ClientConnection
 from th2c.stream import HTTP2ClientStream
-from th2c.exceptions import RequestTimeout
+from th2c.exceptions import RequestTimeout, TH2CError
 
 
 class AsyncHTTP2ClientTestCase(AsyncTestCase):
@@ -203,7 +203,7 @@ class AsyncHTTP2ClientTestCase(AsyncTestCase):
         # assert len of pending requests is 0
         self.assertEqual(len(client.pending_requests), 0)
         for res in results:
-            self.assertIsInstance(res, Exception)
+            self.assertIsInstance(res, TH2CError)
 
     @gen_test
     def test_connection_closed_auto_reconnect(self):
