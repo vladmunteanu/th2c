@@ -123,7 +123,7 @@ class HTTP2ClientStream(object):
     @gen.coroutine
     def begin_request(self):
         if not self.connection.is_ready:
-            raise Exception("Connection not ready!")
+            raise Exception('Connection not ready!')
 
         parsed = urlsplit(to_unicode(self.request.url))
         if (self.request.method not in self.ALLOWED_METHODS and
@@ -255,7 +255,7 @@ class HTTP2ClientStream(object):
                 self.connection.flow_control_window.produce(to_consume)
             except Exception:
                 log.error(
-                    "STREAM %d could not send body chunk",
+                    'STREAM %d could not send body chunk',
                     self.stream_id, exc_info=True
                 )
 
