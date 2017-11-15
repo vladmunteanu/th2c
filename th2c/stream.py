@@ -9,7 +9,7 @@ import h2.exceptions
 from tornado import httputil, gen
 from tornado.escape import to_unicode
 
-from .exceptions import RequestTimeout
+from .exceptions import RequestTimeout, TH2CError
 from .flowcontrol import FlowControlWindow
 from .response import HTTP2Response
 
@@ -123,12 +123,12 @@ class HTTP2ClientStream(object):
     @gen.coroutine
     def begin_request(self):
         if not self.connection.is_ready:
-            raise Exception('Connection not ready!')
+            raise TH2CError('Connection not ready!')
 
         parsed = urlsplit(to_unicode(self.request.url))
         if (self.request.method not in self.ALLOWED_METHODS and
                 not self.request.allow_nonstandard_methods):
-            raise KeyError('Unknown method %s' % self.request.method)
+            raise TH2CError('Unknown method %s' % self.request.method)
 
         if 'Host' not in self.request.headers:
             if not parsed.netloc:
