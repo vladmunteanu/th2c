@@ -16,7 +16,7 @@ from tornado.tcpclient import TCPClient
 
 from .config import DEFAULT_RECONNECT_INTERVAL, DEFAULT_CONNECTION_TIMEOUT
 from .connection import HTTP2ClientConnection
-from .exceptions import RequestTimeout
+from .exceptions import RequestTimeout, TH2CError
 from .stream import HTTP2ClientStream
 
 log = logging.getLogger(__name__)
@@ -108,7 +108,7 @@ class AsyncHTTP2Client(object):
              len(self.pending_requests)]
         )
         if not isinstance(reason, Exception):
-            reason = Exception(reason)
+            reason = TH2CError(reason)
 
         self.connection = None
 
