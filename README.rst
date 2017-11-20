@@ -2,11 +2,12 @@
 Async HTTP/2 Client
 ===================
 
-A simple asynchronous HTTP/2 client for Tornado_, based on the awesome h2_ library.
+A simple asynchronous HTTP/2 client for Tornado_ applications, based on the awesome h2_ library.
 
 Intended for Python 2 (>= 2.7.9).
 
 This package is in a very early development stage, so expect bugs or changes in the API.
+If you spot anything wrong, or would like to suggest improvements, please open an issue or a pull request.
 
 
 =======

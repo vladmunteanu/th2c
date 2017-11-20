@@ -5,7 +5,7 @@ import re
 
 from setuptools import setup
 
-# Get the version (stole this from Cory Benfield :))
+# Get the version (stole this from h2)
 version_regex = r'__version__ = ["\']([^"\']*)["\']'
 with open('th2c/__init__.py', 'r') as f:
     text = f.read()
