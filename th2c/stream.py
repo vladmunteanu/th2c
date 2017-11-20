@@ -196,21 +196,16 @@ class HTTP2ClientStream(object):
                 'STREAM %d Waiting for windows to be available!',
                 self.stream_id
             )
-            yield self.flow_control_window.available()
 
-            # The connection window can be set to None and an
-            # AttributeError will be raised in this case.
-            if not self.connection.is_ready:
-                return
-
-            yield self.connection.flow_control_window.available()
-
-            if not self.connection.is_ready:
+            try:
+                yield self.flow_control_window.available()
+                yield self.connection.flow_control_window.available()
+            except AttributeError:
                 return
 
             # we might have timed out after waiting
             # for control windows to become available
-            if self.timed_out:
+            if self.timed_out or not self.connection.is_ready:
                 return
 
             to_send = total - sent
@@ -250,14 +245,13 @@ class HTTP2ClientStream(object):
                     self.stream_id, data_chunk, end_stream=end_stream
                 )
                 self.connection.flush()
-            except h2.exceptions.H2Error:
-                self.flow_control_window.produce(to_consume)
-                self.connection.flow_control_window.produce(to_consume)
             except Exception:
                 log.error(
                     'STREAM %d could not send body chunk',
                     self.stream_id, exc_info=True
                 )
+                self.flow_control_window.produce(to_consume)
+                self.connection.flow_control_window.produce(to_consume)
 
     def finish(self, exc=None):
         log.debug('STREAM %d finished', self.stream_id)
