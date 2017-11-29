@@ -2,12 +2,8 @@ import mock
 
 import h2.events
 from tornado import gen
-from tornado.httpclient import HTTPRequest
-from tornado.iostream import StreamClosedError
 from tornado.testing import AsyncTestCase, gen_test
 
-from th2c.client import AsyncHTTP2Client
-from th2c.connection import HTTP2ClientConnection
 from th2c.exceptions import RequestTimeout
 from th2c.response import HTTP2Response
 from th2c.stream import HTTP2ClientStream

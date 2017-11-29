@@ -196,24 +196,19 @@ class HTTP2ClientStream(object):
                 'STREAM %d Waiting for windows to be available!',
                 self.stream_id
             )
-            yield self.flow_control_window.available()
 
-            # The connection window can be set to None and an
-            # AttributeError will be raised in this case.
-            if not self.connection.is_ready:
-                return
-
-            yield self.connection.flow_control_window.available()
-
-            if not self.connection.is_ready:
+            try:
+                yield self.flow_control_window.available()
+                yield self.connection.flow_control_window.available()
+            except AttributeError:
                 return
 
             # we might have timed out after waiting
             # for control windows to become available
-            if self.timed_out:
+            if self.timed_out or not self.connection.is_ready:
                 return
 
-            to_send = total - sent
+            remaining = total - sent
             sw = self.flow_control_window.value
             log.debug(
                 'STREAM %d STREAM window has %d available',
@@ -224,40 +219,39 @@ class HTTP2ClientStream(object):
                 'STREAM %d CONNECTION window has %d available',
                 self.stream_id, cw
             )
-            to_consume = min(self.max_frame_size, sw, cw, to_send)
+            to_send = min(self.max_frame_size, sw, cw, remaining)
             log.debug(
                 'STREAM %d Will consume %d',
-                self.stream_id, to_consume
+                self.stream_id, to_send
             )
-            if not to_consume:
+            if not to_send:
                 # if the minimum is 0, we probably got it from
                 # connection window, so let's try again later
                 continue
 
             # consume what we need from flow control windows, and send
-            self.flow_control_window.consume(to_consume)
-            self.connection.flow_control_window.consume(to_consume)
+            self.flow_control_window.consume(to_send)
+            self.connection.flow_control_window.consume(to_send)
 
             # we consumed another chunk, let's try to send it
             try:
                 end_stream = False
-                if sent + to_consume >= total:
+                if sent + to_send >= total:
                     end_stream = True
-                data_chunk = self.request.body[sent:sent + to_consume]
-                sent += to_consume
+                data_chunk = self.request.body[sent:sent + to_send]
+                sent += to_send
 
                 self.connection.h2conn.send_data(
                     self.stream_id, data_chunk, end_stream=end_stream
                 )
                 self.connection.flush()
-            except h2.exceptions.H2Error:
-                self.flow_control_window.produce(to_consume)
-                self.connection.flow_control_window.produce(to_consume)
             except Exception:
                 log.error(
                     'STREAM %d could not send body chunk',
                     self.stream_id, exc_info=True
                 )
+                self.flow_control_window.produce(to_send)
+                self.connection.flow_control_window.produce(to_send)
 
     def finish(self, exc=None):
         log.debug('STREAM %d finished', self.stream_id)
