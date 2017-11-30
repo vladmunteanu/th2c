@@ -148,14 +148,17 @@ class AsyncHTTP2Client(object):
                 max_requests.new_value, self.max_active_requests
             )
 
-    def fetch(self, request):
+    def fetch(self, request, callback=None):
         """
         Asynchronously fetches a request.
-        Returns a Future that will resolve when the request finishes or
-        when an error occurs.
+        Returns a future that will resolve when the request finishes, or when
+        an error occurs.
+        If the `callback` parameter is given, it will be called and passed the
+        result.
 
         :param request: client request
         :type request: tornado.httpclient.HTTPRequest
+        :param callback: final callback, executed when the request is finished
         :return: Future
         """
         # prepare the request object
@@ -174,6 +177,9 @@ class AsyncHTTP2Client(object):
                     future.set_result(response)
             else:
                 future.set_exception(response)
+
+            if callback is not None:
+                self.io_loop.spawn_callback(callback, response)
 
         # unique request key
         key = object()
