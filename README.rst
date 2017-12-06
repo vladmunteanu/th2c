@@ -43,9 +43,9 @@ TODO
 - priority control
 
 
-==================
-Development setup:
-==================
+=================
+Development setup
+=================
 
 If you wish to create a development environment to work on th2c, you can use a Vagrant setup or a virtual environment.
 The Vagrant setup is located under vm_, an Ubuntu 16.04 64bit box with Go and Python 2 installed, that maps the project directory under ``/opt/dev/th2c``.
