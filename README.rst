@@ -56,7 +56,7 @@ You can run it in debug mode, from the project directory, by executing:
 
     ``GODEBUG=http2debug=1 go run test_server/main.go``.
 
-After the server is started, you should run the client by executing:
+After the server has started, you should run the client by executing:
 
     ``python -m th2c``.
 
