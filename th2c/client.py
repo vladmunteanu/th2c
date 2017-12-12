@@ -46,6 +46,10 @@ class AsyncHTTP2Client(object):
                  _connection_cls=HTTP2ClientConnection,
                  _stream_cls=HTTP2ClientStream):
 
+        if getattr(self, 'initialized', False):
+            return
+        else:
+            self.initialized = True
         self.io_loop = io_loop or IOLoop.instance()
 
         self.host = host
