@@ -27,7 +27,7 @@ class HTTP2ClientStreamTestCase(AsyncTestCase):
 
         stream = HTTP2ClientStream(
             connection, request,
-            callback_cleanup, callback_response, self.io_loop
+            callback_cleanup, callback_response, self.io_loop, mock.MagicMock()
         )
 
         self.assertEqual(stream.timed_out, False)
@@ -59,7 +59,7 @@ class HTTP2ClientStreamTestCase(AsyncTestCase):
 
         stream = HTTP2ClientStream(
             connection, request,
-            callback_cleanup, callback_response, self.io_loop
+            callback_cleanup, callback_response, self.io_loop, mock.MagicMock()
         )
 
         self.assertEqual(stream.flow_control_window.value, initial_window_size)
@@ -87,7 +87,7 @@ class HTTP2ClientStreamTestCase(AsyncTestCase):
 
         stream = HTTP2ClientStream(
             connection, request,
-            callback_cleanup, callback_response, self.io_loop
+            callback_cleanup, callback_response, self.io_loop, mock.MagicMock()
         )
 
         stream.finish = mock.MagicMock()
@@ -117,7 +117,7 @@ class HTTP2ClientStreamTestCase(AsyncTestCase):
 
         stream = HTTP2ClientStream(
             connection, request,
-            callback_cleanup, callback_response, self.io_loop
+            callback_cleanup, callback_response, self.io_loop, mock.MagicMock()
         )
 
         stream.finish()
@@ -140,7 +140,7 @@ class HTTP2ClientStreamTestCase(AsyncTestCase):
 
         stream = HTTP2ClientStream(
             connection, request,
-            callback_cleanup, callback_response, self.io_loop
+            callback_cleanup, callback_response, self.io_loop, mock.MagicMock()
         )
 
         exc = Exception('Some error')
@@ -163,7 +163,7 @@ class HTTP2ClientStreamTestCase(AsyncTestCase):
 
         stream = HTTP2ClientStream(
             connection, request,
-            callback_cleanup, callback_response, self.io_loop
+            callback_cleanup, callback_response, self.io_loop, mock.MagicMock()
         )
 
         stream.finish()
