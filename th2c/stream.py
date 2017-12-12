@@ -1,8 +1,9 @@
+import copy
 import httplib
 import io
 import logging
 import traceback
-from urlparse import urlsplit
+from urlparse import urlsplit, urljoin
 
 import h2.events
 import h2.exceptions
@@ -15,6 +16,8 @@ from .response import HTTP2Response
 
 log = logging.getLogger(__name__)
 
+REDIRECT_HTTP_CODES = {301, 302, 303, 307, 308}
+
 
 class HTTP2ClientStream(object):
     ALLOWED_METHODS = {
@@ -23,7 +26,7 @@ class HTTP2ClientStream(object):
 
     def __init__(self, connection, request,
                  callback_cleanup, callback_response,
-                 io_loop):
+                 io_loop, client_cls):
         """
         :param connection: connection object
         :type connection: th2c.connection.HTTP2ClientConnection
@@ -32,8 +35,11 @@ class HTTP2ClientStream(object):
         :param callback_cleanup: should be called to do cleanup in parents
         :param callback_response: should be called with the final result
         :param io_loop: instance of a tornado IOLoop object
+        :param client_cls: client class that will be instantiated for redirects
         """
         self.io_loop = io_loop
+        self.client_cls = client_cls
+
         self.connection = connection
         self.request = request
 
@@ -88,30 +94,10 @@ class HTTP2ClientStream(object):
     def handle_event(self, event):
         # read headers
         if isinstance(event, h2.events.ResponseReceived):
-            # TODO: look at content-encoding and set the decompressor
-            headers = httputil.HTTPHeaders()
-            for name, value in event.headers:
-                headers.add(name, value)
-
-            self.headers = headers
-            self.code = int(headers.pop(':status'))
-            self.reason = httplib.responses.get(self.code, 'Unknown')
-
-            start_line = httputil.ResponseStartLine(
-                'HTTP/2.0', self.code, self.reason
-            )
-
-            if self.request.header_callback is not None:
-                # Reassemble the start line.
-                self.request.header_callback('%s %s %s\r\n' % start_line)
-
-                for k, v in self.headers.get_all():
-                    self.request.header_callback('%s: %s\r\n' % (k, v))
-
-                self.request.header_callback('\r\n')
-
+            self.process_headers(event)
         elif isinstance(event, h2.events.DataReceived):
             # TODO: decompress if necessary
+            log.debug('STREAM %d received data %r', self.stream_id, event.data)
             self._chunks.append(event.data)
         elif isinstance(event, h2.events.WindowUpdated):
             self.flow_control_window.produce(event.delta)
@@ -253,6 +239,90 @@ class HTTP2ClientStream(object):
                 self.flow_control_window.produce(to_send)
                 self.connection.flow_control_window.produce(to_send)
 
+    def process_headers(self, event):
+        """
+        Called when headers are received to parse and redirect if necessary.
+        :param event: h2 event containing received headers
+        :type event: h2.events.ResponseReceived
+        """
+        # TODO: look at content-encoding and set the decompressor
+        log.debug('STREAM %d processing headers', self.stream_id)
+        headers = httputil.HTTPHeaders()
+        for name, value in event.headers:
+            headers.add(name, value)
+
+        self.headers = headers
+        self.code = int(headers.pop(':status'))
+        self.reason = httplib.responses.get(self.code, 'Unknown')
+
+        if (
+            self.request.follow_redirects
+            and self.request.max_redirects > 0
+            and self.code in REDIRECT_HTTP_CODES
+        ):
+            redirect_request = copy.copy(self.request)
+            redirect_request.url = urljoin(
+                self.request.url, self.headers['Location']
+            )
+
+            redirect_request.max_redirects = self.request.max_redirects - 1
+
+            redirect_request.original_request = self.request
+
+            # cleanup
+            self.callback_cleanup()
+            self.connection.end_stream(self)
+
+            # remove timeout and update the timeout for the redirect request
+            self.io_loop.remove_timeout(self._timeout)
+            self._timeout = None
+            if self.request.request_timeout:
+                time_spent = self.io_loop.time() - self.request.start_time
+                redirect_request.request_timeout = (
+                    self.request.request_timeout - time_spent
+                )
+
+            parsed = urlsplit(to_unicode(self.headers['Location']))
+            secure = True
+            if parsed.scheme == 'http':
+                secure = False
+
+            netloc = parsed.netloc.split(':')
+            if len(netloc) == 2:
+                host = netloc[0]
+                port = int(netloc[1])
+            else:
+                host = netloc[0]
+                port = 443
+                if not secure:
+                    port = 80
+
+            log.debug(
+                'STREAM %d redirecting to %s:%d', self.stream_id, host, port
+            )
+
+            cb_response = self.callback_response
+            self.callback_response = None
+            client = self.client_cls(
+                host, port, secure=secure, auto_reconnect=False,
+                verify_certificate=self.request.validate_cert
+            )
+
+            client.fetch(redirect_request, callback=cb_response)
+
+        start_line = httputil.ResponseStartLine(
+            'HTTP/2.0', self.code, self.reason
+        )
+
+        if self.request.header_callback is not None:
+            # Reassemble the start line.
+            self.request.header_callback('%s %s %s\r\n' % start_line)
+
+            for k, v in self.headers.get_all():
+                self.request.header_callback('%s: %s\r\n' % (k, v))
+
+            self.request.header_callback('\r\n')
+
     def finish(self, exc=None):
         log.debug('STREAM %d finished', self.stream_id)
         # mark stream as finished
@@ -268,13 +338,16 @@ class HTTP2ClientStream(object):
             # compose the body
             data = io.BytesIO(b''.join(self._chunks))
 
+            # extract the original request if a redirect was made
+            request = getattr(self.request, 'original_request', self.request)
+
             response = HTTP2Response(
-                self.request,
+                request,
                 self.code,
                 reason=self.reason,
                 headers=self.headers,
                 buffer=data,
-                request_time=self.io_loop.time() - self.request.start_time,
+                request_time=self.io_loop.time() - request.start_time,
                 effective_url=self.request.url
             )
 

@@ -252,7 +252,7 @@ class AsyncHTTP2Client(object):
         """
         stream = self.stream_cls(
             self.connection, request, callback_clear_active, callback,
-            self.io_loop
+            self.io_loop, self.__class__
         )
 
         with stack_context.ExceptionStackContext(stream.handle_exception):

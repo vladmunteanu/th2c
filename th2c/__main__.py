@@ -78,6 +78,35 @@ def test_apple():
 
 
 @gen.coroutine
+def test_redirect():
+    client = AsyncHTTP2Client(
+        host='localhost', port=8080, secure=True, verify_certificate=False
+    )
+
+    req = HTTPRequest(
+        url='https://localhost:8080/redirect',
+        method='GET',
+        request_timeout=5,
+        headers={
+            'User-Agent': 'th2c'
+        },
+        validate_cert=False
+    )
+
+    try:
+        st = time.time()
+        r = yield client.fetch(req)
+        logging.info(
+            ['GOT RESPONSE in', time.time() - st, r.request_time, r.code, r.headers.items(), r.body]
+        )
+    except Exception as e:
+        logging.error('Could not fetch', exc_info=True)
+        logging.info(['ERROR', e.__dict__])
+    finally:
+        client.close()
+
+
+@gen.coroutine
 def test_local():
     client = AsyncHTTP2Client(
         host='localhost', port=8080, secure=True,
@@ -171,10 +200,13 @@ class CounterCondition(object):
 @gen.coroutine
 def main():
     try:
-        yield test_local_many(100)
+        # yield test_local_many(100)
         # yield test_local()
+        yield test_redirect()
     except Exception:
         logging.error('Test failed', exc_info=True)
+    finally:
+        logging.info('FINISHED!')
 
 
 if __name__ == '__main__':
