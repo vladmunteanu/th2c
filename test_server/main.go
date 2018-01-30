@@ -1,23 +1,38 @@
 package main
 
 import (
-	"net/http"
 	"fmt"
+	"golang.org/x/net/http2"
+	"net/http"
 )
 
+var mux map[string]func(http.ResponseWriter, *http.Request)
+
 func main() {
+	server := &http.Server{
+		Addr:    ":8080",
+		Handler: &myHandler{},
+	}
 
-	var srv http.Server
-	srv.Addr = ":8080"
+	http2.ConfigureServer(server, &http2.Server{MaxConcurrentStreams: 1})
 
-	http.HandleFunc("/", index_main)
+	mux = make(map[string]func(http.ResponseWriter, *http.Request))
+	mux["/"] = indexMain
 
 	fmt.Println("Listening for HTTP/2 connections on port 8080")
-
-	srv.ListenAndServeTLS("test_server/certs/localhost.cert", "test_server/certs/localhost.key")
+	server.ListenAndServeTLS("test_server/certs/localhost.cert", "test_server/certs/localhost.key")
 }
 
-func index_main(w http.ResponseWriter, r *http.Request) {
+type myHandler struct{}
+
+func (*myHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h, ok := mux[r.URL.String()]; ok {
+		h(w, r)
+		return
+	}
+}
+
+func indexMain(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	// allow pre-flight headers
