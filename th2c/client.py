@@ -157,7 +157,7 @@ class AsyncHTTP2Client(object):
                 max_requests.new_value, self.max_active_requests
             )
 
-    def fetch(self, request):
+    def fetch(self, request, raise_for_status=True):
         """
         Asynchronously fetches a request.
         Returns a Future that will resolve when the request finishes or
@@ -177,7 +177,7 @@ class AsyncHTTP2Client(object):
         def handle_response(response):
             """ Will be called by HTTP2Stream on request finished """
             if isinstance(response, HTTPResponse):
-                if response.error:
+                if response.error and raise_for_status:
                     future.set_exception(response.error)
                 else:
                     future.set_result(response)
