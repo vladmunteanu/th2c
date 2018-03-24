@@ -37,7 +37,7 @@ class HTTP2ClientStreamTestCase(AsyncTestCase):
         callback_cleanup.assert_called_once()
 
         callback_response.assert_called_once()
-        response_args, response_kwargs = callback_response.call_args
+        response_args, _ = callback_response.call_args
         self.assertIsInstance(response_args[0], RequestTimeout)
 
         self.assertEqual(stream.timed_out, True)
@@ -120,10 +120,11 @@ class HTTP2ClientStreamTestCase(AsyncTestCase):
             callback_cleanup, callback_response, self.io_loop
         )
 
+        stream.code = 200
         stream.finish()
 
         callback_response.assert_called_once()
-        response_args, response_kwargs = callback_response.call_args
+        response_args, _ = callback_response.call_args
         self.assertIsInstance(response_args[0], HTTP2Response)
 
     def test_finish_exception(self):
@@ -166,6 +167,7 @@ class HTTP2ClientStreamTestCase(AsyncTestCase):
             callback_cleanup, callback_response, self.io_loop
         )
 
+        stream.code = 200
         stream.finish()
 
         connection.end_stream.assert_called_once_with(stream)
