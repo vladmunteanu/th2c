@@ -9,7 +9,7 @@ import h2.events
 import h2.exceptions
 import h2.settings
 from tornado import stack_context, httputil
-from tornado.concurrent import TracebackFuture
+from tornado.concurrent import Future
 from tornado.httpclient import HTTPRequest, HTTPResponse, _RequestProxy
 from tornado.ioloop import IOLoop
 from tornado.tcpclient import TCPClient
@@ -132,7 +132,7 @@ class AsyncHTTP2Client(object):
             )
         else:
             while self.pending_requests:
-                key, req, callback = self.pending_requests.popleft()
+                key, _, callback = self.pending_requests.popleft()
                 if key in self.queue_timeouts:
                     _, _, timeout_handle = self.queue_timeouts[key]
                     self.io_loop.remove_timeout(timeout_handle)
@@ -172,7 +172,7 @@ class AsyncHTTP2Client(object):
         request = _RequestProxy(request, dict(HTTPRequest._DEFAULTS))
 
         # wrap everything in a Future
-        future = TracebackFuture()
+        future = Future()
 
         def handle_response(response):
             """ Will be called by HTTP2Stream on request finished """
@@ -273,7 +273,7 @@ class AsyncHTTP2Client(object):
         Removes the request from pending list.
         """
         # remove the pending request
-        request, callback, timeout_handle = self.queue_timeouts[key]
+        request, callback, _ = self.queue_timeouts[key]
         self.pending_requests.remove((key, request, callback))
         del self.queue_timeouts[key]
 
