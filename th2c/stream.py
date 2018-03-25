@@ -97,7 +97,6 @@ class HTTP2ClientStream(object):
             self.process_headers(event)
         elif isinstance(event, h2.events.DataReceived):
             # TODO: decompress if necessary
-            log.debug('STREAM %d received data %r', self.stream_id, event.data)
             self._chunks.append(event.data)
         elif isinstance(event, h2.events.WindowUpdated):
             self.flow_control_window.produce(event.delta)
