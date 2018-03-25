@@ -38,7 +38,7 @@ setup(
         'Programming Language :: Python :: Implementation :: CPython',
     ],
     install_requires=[
-        'tornado>=4.4.2',
+        'tornado>=4.2',
         'h2==3.0.1',
     ]
 )

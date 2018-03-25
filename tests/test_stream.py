@@ -37,7 +37,7 @@ class HTTP2ClientStreamTestCase(AsyncTestCase):
         callback_cleanup.assert_called_once()
 
         callback_response.assert_called_once()
-        response_args, response_kwargs = callback_response.call_args
+        response_args, _ = callback_response.call_args
         self.assertIsInstance(response_args[0], RequestTimeout)
 
         self.assertEqual(stream.timed_out, True)
@@ -120,10 +120,11 @@ class HTTP2ClientStreamTestCase(AsyncTestCase):
             callback_cleanup, callback_response, self.io_loop, mock.MagicMock()
         )
 
+        stream.code = 200
         stream.finish()
 
         callback_response.assert_called_once()
-        response_args, response_kwargs = callback_response.call_args
+        response_args, _ = callback_response.call_args
         self.assertIsInstance(response_args[0], HTTP2Response)
 
     def test_finish_exception(self):
@@ -166,6 +167,7 @@ class HTTP2ClientStreamTestCase(AsyncTestCase):
             callback_cleanup, callback_response, self.io_loop, mock.MagicMock()
         )
 
+        stream.code = 200
         stream.finish()
 
         connection.end_stream.assert_called_once_with(stream)
@@ -175,3 +177,65 @@ class HTTP2ClientStreamTestCase(AsyncTestCase):
         callback_response.assert_called_once()
 
         self.assertEqual(stream._timeout, None)
+
+    def test_redirect(self):
+        """
+        Test redirect is performed if request is configured so and
+        status code is one of 301, 302, 303, 307, 308
+        """
+        connection = mock.MagicMock()
+        connection.initial_window_size = 10
+        connection.begin_stream.return_value = 1
+
+        request = mock.MagicMock()
+        request.url = 'http://localhost/redirect-me'
+        request.start_time = self.io_loop.time()
+        request.request_timeout = 3
+        request.follow_redirects = True
+        request.max_redirects = 1
+
+        callback_cleanup = mock.MagicMock()
+        callback_response = mock.MagicMock()
+
+        client_cls = mock.MagicMock()
+        client_inst = mock.MagicMock()
+        client_cls.return_value = client_inst
+
+        stream = HTTP2ClientStream(
+            connection, request,
+            callback_cleanup, callback_response,
+            self.io_loop, client_cls
+        )
+
+        stream.finish = mock.MagicMock()
+
+        event = mock.Mock(spec=h2.events.StreamEnded)
+
+        stream.headers = {
+            'Location': 'http://localhost/'
+        }
+
+        # do a fake test
+        stream.code = 200
+        stream.handle_event(event)
+        stream.finish.assert_called_once()
+        client_inst.fetch.assert_not_called()
+
+        # reset the mock and do a new test,
+        # this time trying a redirect status code
+        stream.finish.reset_mock()
+        stream.code = 301
+        stream.handle_event(event)
+
+        callback_cleanup.assert_called_once()
+        connection.end_stream.assert_called_once_with(stream)
+        client_inst.fetch.assert_called_once()
+
+        # get the redirect request from the mock's call_args
+        # it should be args[0]
+        call_args, _ = client_inst.fetch.call_args
+        redirect_request = call_args[0]
+
+        self.assertEqual(redirect_request.original_request, request)
+        self.assertEqual(redirect_request.url, 'http://localhost/')
+        stream.finish.assert_called_once()

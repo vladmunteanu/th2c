@@ -9,7 +9,7 @@ import h2.events
 import h2.exceptions
 import h2.settings
 from tornado import stack_context, httputil
-from tornado.concurrent import TracebackFuture
+from tornado.concurrent import Future
 from tornado.httpclient import HTTPRequest, HTTPResponse, _RequestProxy
 from tornado.ioloop import IOLoop
 from tornado.tcpclient import TCPClient
@@ -44,12 +44,13 @@ class AsyncHTTP2Client(object):
                  auto_reconnect=False,
                  auto_reconnect_interval=DEFAULT_RECONNECT_INTERVAL,
                  _connection_cls=HTTP2ClientConnection,
-                 _stream_cls=HTTP2ClientStream):
+                 _stream_cls=HTTP2ClientStream, **kwargs):
 
         if getattr(self, 'initialized', False):
             return
         else:
             self.initialized = True
+
         self.io_loop = io_loop or IOLoop.instance()
 
         self.host = host
@@ -61,6 +62,10 @@ class AsyncHTTP2Client(object):
         self.ssl_cert = ssl_cert
 
         self.closed = False
+
+        self.connection_timeout = kwargs.get(
+            'connection_timeout', DEFAULT_CONNECTION_TIMEOUT
+        )
 
         self.auto_reconnect = auto_reconnect
         self.auto_reconnect_interval = auto_reconnect_interval
@@ -88,7 +93,7 @@ class AsyncHTTP2Client(object):
                 'key': self.ssl_key,
                 'cert': self.ssl_cert
             },
-            connect_timeout=DEFAULT_CONNECTION_TIMEOUT,
+            connect_timeout=self.connection_timeout,
             max_concurrent_streams=self.max_active_requests,
         )
         self.connection.add_event_handler(
@@ -127,7 +132,7 @@ class AsyncHTTP2Client(object):
             )
         else:
             while self.pending_requests:
-                key, req, callback = self.pending_requests.popleft()
+                key, _, callback = self.pending_requests.popleft()
                 if key in self.queue_timeouts:
                     _, _, timeout_handle = self.queue_timeouts[key]
                     self.io_loop.remove_timeout(timeout_handle)
@@ -170,7 +175,7 @@ class AsyncHTTP2Client(object):
         request = _RequestProxy(request, dict(HTTPRequest._DEFAULTS))
 
         # wrap everything in a Future
-        future = TracebackFuture()
+        future = Future()
 
         def handle_response(response):
             """ Will be called by HTTP2Stream on request finished """
@@ -274,7 +279,7 @@ class AsyncHTTP2Client(object):
         Removes the request from pending list.
         """
         # remove the pending request
-        request, callback, timeout_handle = self.queue_timeouts[key]
+        request, callback, _ = self.queue_timeouts[key]
         self.pending_requests.remove((key, request, callback))
         del self.queue_timeouts[key]
 

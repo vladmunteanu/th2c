@@ -109,9 +109,6 @@ class AsyncHTTP2ClientTestCase(AsyncTestCase):
         # the processed settings contain a bigger max_active_requests value,
         client.process_pending_requests.assert_not_called()
 
-        event_setting.original_value = max_active_requests + 1
-        event_setting.original_value = max_active_requests + 1
-
     @gen_test
     def test_queue_timeout(self):
         connection_inst = mock.MagicMock(spec=HTTP2ClientConnection)

@@ -200,8 +200,8 @@ class CounterCondition(object):
 @gen.coroutine
 def main():
     try:
-        # yield test_local_many(100)
-        # yield test_local()
+        yield test_local_many(100)
+        yield test_local()
         yield test_redirect()
     except Exception:
         logging.error('Test failed', exc_info=True)

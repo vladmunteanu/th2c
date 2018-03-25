@@ -328,6 +328,10 @@ class HTTP2ClientConnection(object):
             log.debug(['PROCESSING EVENT', event])
             stream_id = getattr(event, 'stream_id', None)
 
+            if type(event) in self.event_handlers:
+                for ev_handler in self.event_handlers[type(event)]:
+                    ev_handler(event)
+
             if isinstance(event, h2.events.DataReceived):
                 recv_streams[stream_id] = (recv_streams.get(stream_id, 0) +
                                            event.flow_controlled_length)
@@ -347,10 +351,6 @@ class HTTP2ClientConnection(object):
                         stream.handle_exception
                 ):
                     stream.handle_event(event)
-
-            if type(event) in self.event_handlers:
-                for ev_handler in self.event_handlers[type(event)]:
-                    ev_handler(event)
 
         recv_connection = 0
         for stream_id, num_bytes in recv_streams.iteritems():
@@ -417,7 +417,7 @@ class HTTP2ClientConnection(object):
         del self._ongoing_streams[stream.stream_id]
 
     def end_all_streams(self, typ, val, tb):
-        for stream_id, stream in self._ongoing_streams.items():
+        for _, stream in self._ongoing_streams.items():
             stream.handle_exception(typ, val, tb)
 
     def add_event_handler(self, event, handler):

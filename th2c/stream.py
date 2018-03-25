@@ -102,6 +102,7 @@ class HTTP2ClientStream(object):
         elif isinstance(event, h2.events.WindowUpdated):
             self.flow_control_window.produce(event.delta)
         elif isinstance(event, h2.events.StreamEnded):
+            self.perform_redirect()
             self.finish()
         elif isinstance(event, h2.events.StreamReset):
             self.finish()
@@ -255,6 +256,20 @@ class HTTP2ClientStream(object):
         self.code = int(headers.pop(':status'))
         self.reason = httplib.responses.get(self.code, 'Unknown')
 
+        start_line = httputil.ResponseStartLine(
+            'HTTP/2.0', self.code, self.reason
+        )
+
+        if self.request.header_callback is not None:
+            # Reassemble the start line.
+            self.request.header_callback('%s %s %s\r\n' % start_line)
+
+            for k, v in self.headers.get_all():
+                self.request.header_callback('%s: %s\r\n' % (k, v))
+
+            self.request.header_callback('\r\n')
+
+    def perform_redirect(self):
         if (
             self.request.follow_redirects
             and self.request.max_redirects > 0
@@ -282,6 +297,8 @@ class HTTP2ClientStream(object):
                     self.request.request_timeout - time_spent
                 )
 
+            # determine connection info for the new request
+            # secure, host and port
             parsed = urlsplit(to_unicode(self.headers['Location']))
             secure = True
             if parsed.scheme == 'http':
@@ -310,23 +327,8 @@ class HTTP2ClientStream(object):
 
             client.fetch(redirect_request, callback=cb_response)
 
-        start_line = httputil.ResponseStartLine(
-            'HTTP/2.0', self.code, self.reason
-        )
-
-        if self.request.header_callback is not None:
-            # Reassemble the start line.
-            self.request.header_callback('%s %s %s\r\n' % start_line)
-
-            for k, v in self.headers.get_all():
-                self.request.header_callback('%s: %s\r\n' % (k, v))
-
-            self.request.header_callback('\r\n')
-
     def finish(self, exc=None):
         log.debug('STREAM %d finished', self.stream_id)
-        # mark stream as finished
-        self.connection.end_stream(self)
 
         if self._timeout:
             self.io_loop.remove_timeout(self._timeout)
@@ -351,6 +353,8 @@ class HTTP2ClientStream(object):
                 effective_url=self.request.url
             )
 
-        # run callbacks
-        self.callback_cleanup()
-        self.callback_response(response)
+        # do cleanup
+        if self.callback_response:
+            self.connection.end_stream(self)
+            self.callback_cleanup()
+            self.callback_response(response)
