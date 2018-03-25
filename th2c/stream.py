@@ -269,6 +269,13 @@ class HTTP2ClientStream(object):
             self.request.header_callback('\r\n')
 
     def perform_redirect(self):
+        """
+        Checks and performs a redirect if needed.
+        Conditions to follow a redirect are:
+            - request.follow_redirects == True
+            - request.max_redirects > 0
+            - status code one of 301, 302, 303, 307, 308
+        """
         if (
             self.request.follow_redirects
             and self.request.max_redirects > 0
