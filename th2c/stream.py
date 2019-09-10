@@ -1,8 +1,9 @@
-import httplib
+from __future__ import absolute_import
+import six.moves.http_client
 import io
 import logging
 import traceback
-from urlparse import urlsplit
+from six.moves.urllib.parse import urlsplit
 
 import h2.events
 import h2.exceptions
@@ -95,7 +96,7 @@ class HTTP2ClientStream(object):
 
             self.headers = headers
             self.code = int(headers.pop(':status'))
-            self.reason = httplib.responses.get(self.code, 'Unknown')
+            self.reason = six.moves.http_client.responses.get(self.code, 'Unknown')
 
             start_line = httputil.ResponseStartLine(
                 'HTTP/2.0', self.code, self.reason
@@ -164,7 +165,7 @@ class HTTP2ClientStream(object):
             (':path', self.request.url),
             (':scheme', self.scheme),
             (':method', self.request.method),
-        ] + self.request.headers.items()
+        ] + list(self.request.headers.items())
 
         # send headers
         log.debug('STREAM %d Sending headers', self.stream_id)

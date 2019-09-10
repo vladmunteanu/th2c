@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 import functools
 import logging
 import socket
@@ -19,6 +20,7 @@ from .config import (DEFAULT_WINDOW_SIZE,
                      MAX_CONCURRENT_STREAMS)
 from .exceptions import ConnectionError, ConnectionTimeout
 from .flowcontrol import FlowControlWindow
+import six
 
 log = logging.getLogger(__name__)
 
@@ -353,7 +355,7 @@ class HTTP2ClientConnection(object):
                     ev_handler(event)
 
         recv_connection = 0
-        for stream_id, num_bytes in recv_streams.iteritems():
+        for stream_id, num_bytes in six.iteritems(recv_streams):
             if not num_bytes or stream_id not in self._ongoing_streams:
                 continue
 
@@ -380,7 +382,7 @@ class HTTP2ClientConnection(object):
         :param event: a RemoteSettingsChanged event
         :type event: h2.events.RemoteSettingsChanged
         """
-        for name, value in event.changed_settings.iteritems():
+        for name, value in six.iteritems(event.changed_settings):
             log.debug('Received setting %s : %s', name, value)
 
         initial_window_size = event.changed_settings.get(
