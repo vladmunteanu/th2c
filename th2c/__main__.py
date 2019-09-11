@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 import os
 import datetime
 import json
@@ -10,6 +11,7 @@ from tornado.httpclient import HTTPRequest
 from tornado.locks import Condition
 
 from .client import AsyncHTTP2Client
+from six.moves import range
 
 if not os.path.exists('/opt/dev/th2c/logs'):
     os.makedirs('/opt/dev/th2c/logs')
